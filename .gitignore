@@ -1,0 +1,27 @@
+*.zip
+
+# 비밀정보
+.env
+.env.*
+!.env.example
+config.js
+test-accounts.local.json
+*.secret
+service_role*
+
+# 로컬/도구 파일
+node_modules/
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+*.codexbackup
+
+# 실제 업무 데이터 (절대 업로드 금지) - 엑셀·CSV 원본과 가져오기 결과는 data/real/ 에만 둔다
+data/real/
+data/raw/
+*.xlsx
+*.xls
+*.csv
+__pycache__/
+*.pyc
