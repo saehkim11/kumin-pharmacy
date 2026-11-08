@@ -26,7 +26,14 @@ HTML, CSS, JavaScript만 사용하며 데이터는 Supabase(로그인, 권한, �
 `main`에 push하면 `.github/workflows/deploy-pages.yml`이 GitHub Pages로 배포합니다.
 저장소 Secrets에 `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`가 있어야 합니다.
 
+## Supabase 연동(MCP)
+에이전트(Claude Code, Codex 등)에서 Supabase MCP를 OAuth 방식으로 연동해 스키마 변경,
+조회, 대량 데이터 업로드를 진행합니다. 연동 방법과 대량 업로드 시 주의할 점은
+[`docs/supabase-mcp.md`](docs/supabase-mcp.md)에 정리했습니다.
+
 ## 폴더
 - `db/` Supabase SQL (스키마, 권한, RPC, 검증)
 - `data/real/` 실제 업무 엑셀·가져오기 결과 보관용(Git 제외, 절대 커밋 금지)
+- `docs/supabase-mcp.md` Supabase MCP 연동·대량 업로드 방법
+- `docs/sales-legacy-product-matching.md` 과거 판매 데이터 상품 매칭(퍼지 매칭) 기록
 - `AGENTS.md` 작업 규칙
