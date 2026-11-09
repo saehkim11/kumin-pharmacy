@@ -75,6 +75,10 @@ const petVisitDetail = document.querySelector('#petVisitDetail');
 const petVisitFormMessage = document.querySelector('#petVisitFormMessage');
 const petVisitRecordOptions = document.querySelector('#petVisitRecordOptions');
 const petVisitDetailOptions = document.querySelector('#petVisitDetailOptions');
+const newPetToggle = document.querySelector('#newPetToggle');
+const newPetPanel = document.querySelector('#newPetPanel');
+const newPetForm = document.querySelector('#newPetForm');
+const newPetFormMessage = document.querySelector('#newPetFormMessage');
 let selectedPetId = null;
 
 // 많이 쓰인 진료기록/상세 문구를 빈도순으로 datalist에 채워 자동완성으로 재사용할 수 있게 함
@@ -214,7 +218,7 @@ const siteTreeData = {
       { label: '판매 등록', full: '판매 등록', access: 'all', note: '상품 검색 → 수량 → 판매일 → 목록 담기 → 결제수단 → 등록', data: ['rpc_create_sale', 'products'] },
       { label: '판매 내역', full: '월별 판매 내역', access: 'all', note: '일자별 · 품목별 판매수량과 매출액', data: ['sales', 'sale_items'], insight: 2 }
     ] },
-    { label: '접종 관리', full: '접종 관리', access: 'all', note: '이름을 음성 또는 텍스트로 검색해 보호자 연락처, 진료기록, 방문·접종 이력을 확인합니다.', data: ['pets', 'owners', 'pet_visits'] },
+    { label: '고객·반려동물 관리', full: '고객·반려동물 관리', access: 'all', note: '이름을 음성 또는 텍스트로 검색해 보호자 연락처, 진료·접종·약구매 이력을 확인하고 신규 보호자·반려동물을 등록합니다.', data: ['pets', 'owners', 'pet_visits'] },
     { label: '입고', full: '입고 관리', access: 'admin', note: '입고를 등록하고 재고 수불부를 확인합니다. 직원에게는 메뉴가 보이지 않습니다.', insight: 1, children: [
       { label: '입고 등록', full: '입고 등록', access: 'admin', note: '거래처 · 입고일 · 단가 · 로트 · 유효기간', data: ['rpc_receive_purchase', 'suppliers'] },
       { label: '수불부', full: '월별 재고 수불부', access: 'admin', note: '기초 · 입고 · 출고 · 재고 수량', data: ['inventory_movements', 'products'], insight: 1 }
@@ -1224,6 +1228,7 @@ function preparePetSearch() {
   petMicButton.disabled = !petRecognition;
   petSearchHint.hidden = true;
   petSearchMessage.textContent = '';
+  newPetToggle.disabled = false;
 }
 
 async function searchPets(name) {
@@ -1594,6 +1599,51 @@ petVisitForm.addEventListener('submit', async (event) => {
     loadPetVisitSuggestions();
   } catch (error) {
     petVisitFormMessage.textContent = error.message;
+  }
+});
+newPetToggle.addEventListener('click', () => {
+  newPetPanel.hidden = !newPetPanel.hidden;
+  newPetToggle.textContent = newPetPanel.hidden ? '+ 처음 방문하는 보호자·반려동물 등록' : '− 등록 양식 닫기';
+  if (!newPetPanel.hidden) document.querySelector('#newOwnerName').focus();
+});
+newPetForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const ownerName = document.querySelector('#newOwnerName').value.trim();
+  const petName = document.querySelector('#newPetName').value.trim();
+  if (!ownerName) { document.querySelector('#newOwnerName').focus(); return; }
+  if (!petName) { document.querySelector('#newPetName').focus(); return; }
+  newPetFormMessage.textContent = '등록 중...';
+  const neuteredValue = document.querySelector('#newPetNeutered').value;
+  const weightValue = document.querySelector('#newPetWeight').value;
+  try {
+    const response = await api('rpc/rpc_create_pet', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_owner_name: ownerName,
+        p_owner_phone: document.querySelector('#newOwnerPhone').value.trim() || null,
+        p_pet_name: petName,
+        p_species: document.querySelector('#newPetSpecies').value,
+        p_breed: document.querySelector('#newPetBreed').value.trim() || null,
+        p_sex: document.querySelector('#newPetSex').value,
+        p_neutered: neuteredValue === '' ? null : neuteredValue === 'true',
+        p_birth_date: document.querySelector('#newPetBirth').value || null,
+        p_coat_color: document.querySelector('#newPetCoat').value.trim() || null,
+        p_weight_kg: weightValue === '' ? null : Number(weightValue)
+      })
+    });
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => ({}));
+      throw new Error(errorBody.message || '등록에 실패했습니다.');
+    }
+    const newPetId = await response.json();
+    newPetForm.reset();
+    newPetFormMessage.textContent = '등록되었습니다. 아래에서 첫 방문 기록을 남길 수 있습니다.';
+    newPetPanel.hidden = true;
+    newPetToggle.textContent = '+ 처음 방문하는 보호자·반려동물 등록';
+    petCandidatesWrap.hidden = true;
+    await showPetDetail(newPetId);
+  } catch (error) {
+    newPetFormMessage.textContent = error.message;
   }
 });
 productSearch.addEventListener('input', () => renderProducts(productSearch.value));

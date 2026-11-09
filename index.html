@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>pharmacy management</title>
-    <link rel="stylesheet" href="styles.css?v=20261109d" />
+    <link rel="stylesheet" href="styles.css?v=20261109g" />
   </head>
   <body>
     <div class="app-shell">
@@ -17,7 +17,7 @@
         <nav aria-label="주요 메뉴">
           <button class="nav-button active" data-view="dashboard">대시보드</button>
           <button class="nav-button" data-view="sales">판매 관리</button>
-          <button class="nav-button" data-view="pets">접종 관리</button>
+          <button class="nav-button" data-view="pets">고객·반려동물 관리</button>
           <button class="nav-button" data-view="purchases" id="purchaseNav" hidden>입고 관리</button>
           <button class="nav-button" data-view="tasks">공유 업무</button>
           <button class="nav-button" data-view="analytics">분석</button>
@@ -92,7 +92,7 @@
 
         <section class="view" id="pets">
           <section class="panel">
-            <p class="eyebrow">VACCINATION LOOKUP</p><h2>접종 관리</h2>
+            <p class="eyebrow">CUSTOMER & PET LOOKUP</p><h2>고객·반려동물 관리</h2>
             <p class="empty-message" id="petSearchHint">로그인하면 반려동물 이름으로 검색할 수 있습니다.</p>
             <div class="toolbar pet-search-toolbar">
               <div class="pet-search-field">
@@ -103,6 +103,24 @@
               <button class="login-button" id="petSearchButton" type="button" disabled>검색</button>
             </div>
             <p class="form-message" id="petSearchMessage"></p>
+            <button class="logout-button" id="newPetToggle" type="button" disabled>+ 처음 방문하는 보호자·반려동물 등록</button>
+            <section class="pet-detail-panel" id="newPetPanel" hidden>
+              <h4>새 보호자·반려동물 등록</h4>
+              <form class="pet-new-form" id="newPetForm">
+                <div><label for="newOwnerName">보호자 이름</label><input id="newOwnerName" type="text" maxlength="40" required /></div>
+                <div><label for="newOwnerPhone">연락처 <span>(선택)</span></label><input id="newOwnerPhone" type="tel" maxlength="20" placeholder="010-1234-5678" /></div>
+                <div><label for="newPetName">반려동물 이름</label><input id="newPetName" type="text" maxlength="40" required /></div>
+                <div><label for="newPetSpecies">종류</label><select id="newPetSpecies"><option value="dog">강아지</option><option value="cat">고양이</option><option value="unknown">기타</option></select></div>
+                <div><label for="newPetBreed">품종 <span>(선택)</span></label><input id="newPetBreed" type="text" maxlength="40" /></div>
+                <div><label for="newPetSex">성별</label><select id="newPetSex"><option value="unknown">미상</option><option value="male">수컷</option><option value="female">암컷</option></select></div>
+                <div><label for="newPetNeutered">중성화</label><select id="newPetNeutered"><option value="">미상</option><option value="true">완료</option><option value="false">안함</option></select></div>
+                <div><label for="newPetBirth">생년월일 <span>(선택)</span></label><input id="newPetBirth" type="date" /></div>
+                <div><label for="newPetWeight">체중(kg) <span>(선택)</span></label><input id="newPetWeight" type="number" min="0" step="0.1" /></div>
+                <div><label for="newPetCoat">털색 <span>(선택)</span></label><input id="newPetCoat" type="text" maxlength="40" /></div>
+                <button class="login-button" type="submit">등록</button>
+              </form>
+              <p class="form-message" id="newPetFormMessage"></p>
+            </section>
             <div class="table-wrap" hidden id="petCandidatesWrap">
               <table><thead><tr><th>이름</th><th>종류</th><th>품종</th><th>마지막 방문일</th><th>보호자</th><th></th></tr></thead><tbody id="petCandidateRows"></tbody></table>
             </div>
@@ -199,6 +217,6 @@
       </form>
     </dialog>
     <script src="config.js"></script>
-    <script src="app.js?v=20261109f"></script>
+    <script src="app.js?v=20261109g"></script>
   </body>
 </html>
