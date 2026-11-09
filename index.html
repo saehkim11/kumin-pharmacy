@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>pharmacy management</title>
-    <link rel="stylesheet" href="styles.css?v=20261109c" />
+    <link rel="stylesheet" href="styles.css?v=20261109d" />
   </head>
   <body>
     <div class="app-shell">
@@ -114,6 +114,14 @@
               <h4>방문·접종 이력 (일자별)</h4>
               <div class="table-wrap"><table><thead><tr><th>일자</th><th>진료기록</th><th>상세</th></tr></thead><tbody id="petVisitRows"></tbody></table></div>
               <p class="empty-message" id="petVisitEmpty" hidden>방문·접종 이력이 없습니다.</p>
+              <h4>새 접종·방문 등록</h4>
+              <form class="pet-visit-form" id="petVisitForm">
+                <div><label for="petVisitDate">일자</label><input id="petVisitDate" type="date" required /></div>
+                <div><label for="petVisitRecord">진료기록</label><input id="petVisitRecord" type="text" maxlength="200" placeholder="예: 종합백신 3차접종" list="petVisitRecordOptions" autocomplete="off" required /><datalist id="petVisitRecordOptions"></datalist></div>
+                <div><label for="petVisitDetail">상세 <span>(선택)</span></label><input id="petVisitDetail" type="text" maxlength="200" placeholder="예: 다음 접종 2주 후" list="petVisitDetailOptions" autocomplete="off" /><datalist id="petVisitDetailOptions"></datalist></div>
+                <button class="login-button" type="submit">등록</button>
+              </form>
+              <p class="form-message" id="petVisitFormMessage"></p>
             </section>
           </section>
         </section>
@@ -191,6 +199,6 @@
       </form>
     </dialog>
     <script src="config.js"></script>
-    <script src="app.js?v=20261109c"></script>
+    <script src="app.js?v=20261109f"></script>
   </body>
 </html>

@@ -68,6 +68,33 @@ const petVisitRows = document.querySelector('#petVisitRows');
 const petVisitEmpty = document.querySelector('#petVisitEmpty');
 const petSpeciesLabel = { dog: '강아지', cat: '고양이', unknown: '미상' };
 const petSexLabel = { male: '수컷', female: '암컷', unknown: '미상' };
+const petVisitForm = document.querySelector('#petVisitForm');
+const petVisitDate = document.querySelector('#petVisitDate');
+const petVisitRecord = document.querySelector('#petVisitRecord');
+const petVisitDetail = document.querySelector('#petVisitDetail');
+const petVisitFormMessage = document.querySelector('#petVisitFormMessage');
+const petVisitRecordOptions = document.querySelector('#petVisitRecordOptions');
+const petVisitDetailOptions = document.querySelector('#petVisitDetailOptions');
+let selectedPetId = null;
+
+// 많이 쓰인 진료기록/상세 문구를 빈도순으로 datalist에 채워 자동완성으로 재사용할 수 있게 함
+async function loadPetVisitSuggestions() {
+  try {
+    const response = await apiAll('pet_visits?select=record,detail');
+    const rank = (rows, field) => {
+      const counts = new Map();
+      rows.forEach((row) => {
+        const value = row[field]?.trim();
+        if (value) counts.set(value, (counts.get(value) || 0) + 1);
+      });
+      return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([value]) => value).slice(0, 300);
+    };
+    petVisitRecordOptions.replaceChildren(...rank(response, 'record').map((value) => new Option(value)));
+    petVisitDetailOptions.replaceChildren(...rank(response, 'detail').map((value) => new Option(value)));
+  } catch {
+    // 자동완성은 부가 기능이라 실패해도 등록 자체는 계속 가능해야 함
+  }
+}
 
 const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
 let petRecognition = null;
@@ -1238,6 +1265,7 @@ function renderPetCandidates(results) {
 }
 
 async function showPetDetail(petId) {
+  selectedPetId = petId;
   petSearchMessage.textContent = '불러오는 중...';
   try {
     const [detailResponse, visitResponse] = await Promise.all([
@@ -1287,6 +1315,10 @@ function renderPetDetail(detail, visits) {
       return row;
     }));
   }
+  petVisitDate.value = getLocalDate();
+  petVisitRecord.value = '';
+  petVisitDetail.value = '';
+  petVisitFormMessage.textContent = '';
 }
 
 function renderPurchaseProductOptions(keyword = '') {
@@ -1422,9 +1454,107 @@ async function showTask(task) {
   const list = document.querySelector('#commentList'); list.replaceChildren(...comments.map((comment) => { const item = document.createElement('article'); item.className = 'comment'; item.innerHTML = `<b>${names.get(comment.author_id) || '사용자'}</b><span></span>`; item.querySelector('span').textContent = comment.body; return item; }));
 }
 
+const SESSION_STORAGE_KEY = 'pharmacy-session';
+
+function saveSession(session) {
+  try { localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({ refresh_token: session.refresh_token })); } catch {}
+}
+
+function clearSession() {
+  try { localStorage.removeItem(SESSION_STORAGE_KEY); } catch {}
+}
+
 async function signOut() {
   if (accessToken) await fetch(`${config.supabaseUrl}/auth/v1/logout`, { method: 'POST', headers: { apikey: config.supabasePublishableKey, Authorization: `Bearer ${accessToken}` } });
+  clearSession();
   window.location.reload();
+}
+
+// 로그인(비밀번호) 또는 새로고침 후 세션 복원(refresh_token) 양쪽에서 공용으로 쓰는 로그인 완료 처리
+async function completeLogin(session) {
+  accessToken = session.access_token;
+  currentUser = session.user;
+  const response = await fetch(`${config.supabaseUrl}/rest/v1/products?select=id,code,name,sale_price,track_stock,product_stock(quantity),product_costs(purchase_price),product_categories(name)&order=code`, { headers: { apikey: config.supabasePublishableKey, Authorization: `Bearer ${accessToken}` } });
+  if (!response.ok) throw new Error('상품 정보를 불러오지 못했습니다.');
+  products = await response.json();
+  productSearch.disabled = false;
+  productMessage.hidden = true;
+  productTableWrap.hidden = false;
+  renderProducts();
+  prepareSales();
+  preparePetSearch();
+  loadPetVisitSuggestions();
+  const profileResponse = await fetch(`${config.supabaseUrl}/rest/v1/profiles?select=role&id=eq.${session.user.id}`, { headers: { apikey: config.supabasePublishableKey, Authorization: `Bearer ${accessToken}` } });
+  const profile = profileResponse.ok ? (await profileResponse.json())[0] : null;
+  currentProfile = profile;
+  document.querySelector('#roleBadge').textContent = profile?.role === 'admin' ? '현재 상태: admin (관리자)' : profile?.role === 'staff' ? '현재 상태: staff (직원)' : '현재 상태: 권한 확인 필요';
+  document.querySelector('#roleBadge').dataset.role = profile?.role || '';
+  await loadTasks();
+  await loadDashboard();
+  prepareSalesHistory();
+  if (profile?.role !== 'admin') {
+    document.querySelector('[data-view="analytics"]').hidden = true;
+  } else {
+    document.querySelector('#ownerTaskForm').hidden = false;
+    document.querySelector('#purchaseNav').hidden = false;
+    document.querySelector('#structureNav').hidden = false;
+    renderSiteStructure();
+    document.querySelector('#purchaseQuickAction')?.removeAttribute('hidden');
+    try {
+      await Promise.all([loadSuppliers(), loadInventoryMovements()]);
+      preparePurchases();
+      prepareInventoryLedger();
+    } catch (error) {
+      document.querySelector('#purchaseMessage').textContent = error.message;
+      productMessage.textContent = error.message;
+    }
+    const itemResponse = await apiAllResponse('sale_items?select=sale_id,product_id,quantity,amount&order=id.asc');
+    const salesResponse = await apiAllResponse('sales?select=id,sold_at,total_amount,status&status=eq.completed&order=id.asc');
+    try {
+      analyticsProfit = await apiAll('v_sale_items_profit?select=sold_at,product_id,quantity,amount,cost_amount&status=eq.completed&order=sale_item_id.asc');
+    } catch (error) {
+      analyticsProfit = [];
+    }
+    const weatherResponse = await fetch(`${config.supabaseUrl}/rest/v1/environmental_data?select=date,temp_max,temp_min,temp_mean,precipitation_mm&order=date`, { headers: { apikey: config.supabasePublishableKey, Authorization: `Bearer ${accessToken}` } });
+    if (itemResponse.ok && salesResponse.ok) {
+      const completedSales = await salesResponse.json();
+      const completedIds = new Set(completedSales.map((sale) => sale.id));
+      const completedItems = (await itemResponse.json()).filter((item) => completedIds.has(item.sale_id));
+      analyticsSales = completedSales;
+      analyticsSaleItems = completedItems;
+      analyticsWeather = weatherResponse.ok ? await weatherResponse.json() : [];
+      renderAnalytics(analyticsSales, analyticsSaleItems);
+      loadSeoulForecast().then((forecast) => {
+        analyticsForecast = forecast;
+        analyticsForecastError = '';
+        renderAnalytics(analyticsSales, analyticsSaleItems);
+      }).catch((error) => {
+        analyticsForecast = [];
+        analyticsForecastError = error.message;
+        renderAnalytics(analyticsSales, analyticsSaleItems);
+      });
+    }
+  }
+  loginButton.textContent = '로그아웃';
+  saveSession(session);
+}
+
+async function restoreSession() {
+  let saved;
+  try { saved = JSON.parse(localStorage.getItem(SESSION_STORAGE_KEY) || 'null'); } catch { saved = null; }
+  if (!saved?.refresh_token || !hasConfig()) return;
+  try {
+    const auth = await fetch(`${config.supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
+      method: 'POST',
+      headers: { apikey: config.supabasePublishableKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: saved.refresh_token })
+    });
+    if (!auth.ok) { clearSession(); return; }
+    const session = await auth.json();
+    await completeLogin(session);
+  } catch {
+    clearSession();
+  }
 }
 
 loginButton.addEventListener('click', () => {
@@ -1443,6 +1573,28 @@ petMicButton.addEventListener('click', () => {
   petMicButton.classList.add('listening');
   petSearchMessage.textContent = '듣는 중... 반려동물 이름을 말씀해 주세요.';
   try { petRecognition.start(); } catch { petMicButton.classList.remove('listening'); }
+});
+petVisitForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  if (!selectedPetId) return;
+  const record = petVisitRecord.value.trim();
+  if (!record) { petVisitRecord.focus(); return; }
+  petVisitFormMessage.textContent = '등록 중...';
+  try {
+    const response = await api('rpc/rpc_add_pet_visit', {
+      method: 'POST',
+      body: JSON.stringify({ p_pet_id: selectedPetId, p_visit_date: petVisitDate.value || null, p_record: record, p_detail: petVisitDetail.value.trim() || null })
+    });
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => ({}));
+      throw new Error(errorBody.message || '등록에 실패했습니다.');
+    }
+    await showPetDetail(selectedPetId);
+    petVisitFormMessage.textContent = '등록되었습니다.';
+    loadPetVisitSuggestions();
+  } catch (error) {
+    petVisitFormMessage.textContent = error.message;
+  }
 });
 productSearch.addEventListener('input', () => renderProducts(productSearch.value));
 ledgerMonth.addEventListener('change', (event) => {
@@ -1488,69 +1640,7 @@ document.querySelector('#loginForm').addEventListener('submit', async (event) =>
     const auth = await fetch(`${config.supabaseUrl}/auth/v1/token?grant_type=password`, { method: 'POST', headers: { apikey: config.supabasePublishableKey, 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
     if (!auth.ok) throw new Error('이메일 또는 비밀번호를 확인하세요.');
     const session = await auth.json();
-    accessToken = session.access_token;
-    currentUser = session.user;
-    const response = await fetch(`${config.supabaseUrl}/rest/v1/products?select=id,code,name,sale_price,track_stock,product_stock(quantity),product_costs(purchase_price),product_categories(name)&order=code`, { headers: { apikey: config.supabasePublishableKey, Authorization: `Bearer ${accessToken}` } });
-    if (!response.ok) throw new Error('상품 정보를 불러오지 못했습니다.');
-    products = await response.json();
-    productSearch.disabled = false;
-    productMessage.hidden = true;
-    productTableWrap.hidden = false;
-    renderProducts();
-    prepareSales();
-    preparePetSearch();
-    const profileResponse = await fetch(`${config.supabaseUrl}/rest/v1/profiles?select=role&id=eq.${session.user.id}`, { headers: { apikey: config.supabasePublishableKey, Authorization: `Bearer ${accessToken}` } });
-    const profile = profileResponse.ok ? (await profileResponse.json())[0] : null;
-    currentProfile = profile;
-    document.querySelector('#roleBadge').textContent = profile?.role === 'admin' ? '현재 상태: admin (관리자)' : profile?.role === 'staff' ? '현재 상태: staff (직원)' : '현재 상태: 권한 확인 필요';
-    document.querySelector('#roleBadge').dataset.role = profile?.role || '';
-    await loadTasks();
-    await loadDashboard();
-    prepareSalesHistory();
-    if (profile?.role !== 'admin') {
-      document.querySelector('[data-view="analytics"]').hidden = true;
-    } else {
-      document.querySelector('#ownerTaskForm').hidden = false;
-      document.querySelector('#purchaseNav').hidden = false;
-      document.querySelector('#structureNav').hidden = false;
-      renderSiteStructure();
-      document.querySelector('#purchaseQuickAction')?.removeAttribute('hidden');
-      try {
-        await Promise.all([loadSuppliers(), loadInventoryMovements()]);
-        preparePurchases();
-        prepareInventoryLedger();
-      } catch (error) {
-        document.querySelector('#purchaseMessage').textContent = error.message;
-        productMessage.textContent = error.message;
-      }
-      const itemResponse = await apiAllResponse('sale_items?select=sale_id,product_id,quantity,amount&order=id.asc');
-      const salesResponse = await apiAllResponse('sales?select=id,sold_at,total_amount,status&status=eq.completed&order=id.asc');
-      try {
-        analyticsProfit = await apiAll('v_sale_items_profit?select=sold_at,product_id,quantity,amount,cost_amount&status=eq.completed&order=sale_item_id.asc');
-      } catch (error) {
-        analyticsProfit = [];
-      }
-      const weatherResponse = await fetch(`${config.supabaseUrl}/rest/v1/environmental_data?select=date,temp_max,temp_min,temp_mean,precipitation_mm&order=date`, { headers: { apikey: config.supabasePublishableKey, Authorization: `Bearer ${accessToken}` } });
-      if (itemResponse.ok && salesResponse.ok) {
-        const completedSales = await salesResponse.json();
-        const completedIds = new Set(completedSales.map((sale) => sale.id));
-        const completedItems = (await itemResponse.json()).filter((item) => completedIds.has(item.sale_id));
-        analyticsSales = completedSales;
-        analyticsSaleItems = completedItems;
-        analyticsWeather = weatherResponse.ok ? await weatherResponse.json() : [];
-        renderAnalytics(analyticsSales, analyticsSaleItems);
-        loadSeoulForecast().then((forecast) => {
-          analyticsForecast = forecast;
-          analyticsForecastError = '';
-          renderAnalytics(analyticsSales, analyticsSaleItems);
-        }).catch((error) => {
-          analyticsForecast = [];
-          analyticsForecastError = error.message;
-          renderAnalytics(analyticsSales, analyticsSaleItems);
-        });
-      }
-    }
-    loginButton.textContent = '로그아웃';
+    await completeLogin(session);
     loginDialog.close();
   } catch (error) { message.textContent = error.message; }
 });
@@ -1649,3 +1739,5 @@ document.querySelector('#submitPurchase').addEventListener('click', async () => 
     message.textContent = `입고가 등록되었습니다. 입고 번호: ${purchaseId} · 재고와 대시보드에 반영되었습니다.`;
   } catch (error) { message.textContent = error.message; }
 });
+
+restoreSession();
