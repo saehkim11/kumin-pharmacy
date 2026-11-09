@@ -117,4 +117,12 @@ html[data-theme="dark"] .stock-lookup-heading select{background:#111c2e;border-c
 @media(max-width:860px){.profit-split{grid-template-columns:1fr}.profit-card{padding:14px}.profit-table{font-size:13px}.margin-cell b{display:none}}
 .profit-split>div{min-width:0;overflow-x:auto}.profit-table.small{table-layout:auto}.profit-table.small th,.profit-table.small td{padding:7px 6px}.profit-table.small td:first-child{white-space:normal;word-break:keep-all;min-width:110px}.profit-table.small td:nth-child(n+2){white-space:nowrap}
 @media(max-width:1280px){.profit-split{grid-template-columns:1fr}}
+
+.pet-search-toolbar{grid-template-columns:minmax(0,1fr) auto auto;align-items:end;max-width:760px}.pet-search-field{min-width:0}.pet-search-field label{display:block;margin:0 0 6px;color:#445066;font-size:13px;font-weight:700}#petMicButton{white-space:nowrap}#petMicButton.listening{background:#e8590c;animation:pet-mic-pulse 1.2s ease-in-out infinite}
+@keyframes pet-mic-pulse{0%,100%{opacity:1}50%{opacity:.6}}
+.pet-detail-panel{margin-top:24px;padding-top:20px;border-top:1px solid var(--line)}.pet-detail-panel h3{margin:0 0 4px;font-size:20px}.pet-detail-panel h4{margin:18px 0 8px;font-size:14px;color:var(--muted)}
+.pet-detail-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:10px}.pet-detail-grid div{padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:#fbfcfe}.pet-detail-grid span{display:block;color:var(--muted);font-size:11px;font-weight:700}.pet-detail-grid b{display:block;margin-top:3px;font-size:14px}
+#petCandidateRows td:last-child,#petCandidateRows th:last-child{text-align:right}.pet-candidate-select{border:1px solid var(--blue);border-radius:7px;background:var(--blue-soft);color:var(--blue);font:inherit;font-weight:700;padding:6px 12px;cursor:pointer}.pet-candidate-select:hover{background:var(--blue);color:#fff}
+@media(max-width:560px){.pet-search-toolbar{grid-template-columns:1fr}.pet-detail-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+html[data-theme="dark"] .pet-detail-grid div{background:#1c2a40;border-color:var(--line)}
 @media(max-width:560px){.category-table th:nth-child(2),.category-table td:nth-child(2),.category-table th:nth-child(5),.category-table td:nth-child(5){display:none}}

@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>pharmacy management</title>
-    <link rel="stylesheet" href="styles.css?v=20261107" />
+    <link rel="stylesheet" href="styles.css?v=20261109c" />
   </head>
   <body>
     <div class="app-shell">
@@ -17,6 +17,7 @@
         <nav aria-label="주요 메뉴">
           <button class="nav-button active" data-view="dashboard">대시보드</button>
           <button class="nav-button" data-view="sales">판매 관리</button>
+          <button class="nav-button" data-view="pets">접종 관리</button>
           <button class="nav-button" data-view="purchases" id="purchaseNav" hidden>입고 관리</button>
           <button class="nav-button" data-view="tasks">공유 업무</button>
           <button class="nav-button" data-view="analytics">분석</button>
@@ -85,6 +86,34 @@
               <p class="ledger-summary" id="salesHistorySummary" hidden></p>
               <p class="empty-message" id="salesHistoryMessage">로그인하면 판매 내역을 볼 수 있습니다.</p>
               <div id="salesHistoryBody"></div>
+            </section>
+          </section>
+        </section>
+
+        <section class="view" id="pets">
+          <section class="panel">
+            <p class="eyebrow">VACCINATION LOOKUP</p><h2>접종 관리</h2>
+            <p class="empty-message" id="petSearchHint">로그인하면 반려동물 이름으로 검색할 수 있습니다.</p>
+            <div class="toolbar pet-search-toolbar">
+              <div class="pet-search-field">
+                <label for="petSearchInput">반려동물 이름</label>
+                <input id="petSearchInput" type="search" placeholder="이름을 입력하거나 마이크를 눌러 말하세요" autocomplete="off" disabled />
+              </div>
+              <button class="login-button" id="petMicButton" type="button" disabled title="마이크로 이름 말하기">🎤 음성으로 검색</button>
+              <button class="login-button" id="petSearchButton" type="button" disabled>검색</button>
+            </div>
+            <p class="form-message" id="petSearchMessage"></p>
+            <div class="table-wrap" hidden id="petCandidatesWrap">
+              <table><thead><tr><th>이름</th><th>종류</th><th>품종</th><th>마지막 방문일</th><th>보호자</th><th></th></tr></thead><tbody id="petCandidateRows"></tbody></table>
+            </div>
+            <section class="pet-detail-panel" id="petDetailPanel" hidden>
+              <h3 id="petDetailName"></h3>
+              <div class="pet-detail-grid" id="petDetailInfo"></div>
+              <h4>진료기록 요약</h4>
+              <p id="petDetailNotes" class="empty-message"></p>
+              <h4>방문·접종 이력 (일자별)</h4>
+              <div class="table-wrap"><table><thead><tr><th>일자</th><th>진료기록</th><th>상세</th></tr></thead><tbody id="petVisitRows"></tbody></table></div>
+              <p class="empty-message" id="petVisitEmpty" hidden>방문·접종 이력이 없습니다.</p>
             </section>
           </section>
         </section>
@@ -162,6 +191,6 @@
       </form>
     </dialog>
     <script src="config.js"></script>
-    <script src="app.js?v=20261107"></script>
+    <script src="app.js?v=20261109c"></script>
   </body>
 </html>

@@ -53,6 +53,43 @@ const purchaseUnitCost = document.querySelector('#purchaseUnitCost');
 const purchaseLotNo = document.querySelector('#purchaseLotNo');
 const purchaseExpiryDate = document.querySelector('#purchaseExpiryDate');
 
+const petSearchInput = document.querySelector('#petSearchInput');
+const petMicButton = document.querySelector('#petMicButton');
+const petSearchButton = document.querySelector('#petSearchButton');
+const petSearchMessage = document.querySelector('#petSearchMessage');
+const petSearchHint = document.querySelector('#petSearchHint');
+const petCandidatesWrap = document.querySelector('#petCandidatesWrap');
+const petCandidateRows = document.querySelector('#petCandidateRows');
+const petDetailPanel = document.querySelector('#petDetailPanel');
+const petDetailName = document.querySelector('#petDetailName');
+const petDetailInfo = document.querySelector('#petDetailInfo');
+const petDetailNotes = document.querySelector('#petDetailNotes');
+const petVisitRows = document.querySelector('#petVisitRows');
+const petVisitEmpty = document.querySelector('#petVisitEmpty');
+const petSpeciesLabel = { dog: '강아지', cat: '고양이', unknown: '미상' };
+const petSexLabel = { male: '수컷', female: '암컷', unknown: '미상' };
+
+const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+let petRecognition = null;
+if (SpeechRecognitionCtor) {
+  petRecognition = new SpeechRecognitionCtor();
+  petRecognition.lang = 'ko-KR';
+  petRecognition.interimResults = false;
+  petRecognition.maxAlternatives = 1;
+  petRecognition.addEventListener('result', (event) => {
+    const text = event.results[0][0].transcript.trim();
+    petSearchInput.value = text;
+    searchPets(text);
+  });
+  petRecognition.addEventListener('end', () => petMicButton.classList.remove('listening'));
+  petRecognition.addEventListener('error', (event) => {
+    petMicButton.classList.remove('listening');
+    petSearchMessage.textContent = event.error === 'not-allowed' ? '마이크 권한을 허용해 주세요.' : '음성 인식에 실패했습니다. 다시 시도하거나 직접 입력해 주세요.';
+  });
+} else {
+  petMicButton.title = '이 브라우저는 음성 인식을 지원하지 않습니다. 직접 입력해 주세요.';
+}
+
 function getSeasonalitySettings() {
   try {
     const saved = JSON.parse(localStorage.getItem('pharmacy-seasonality-settings') || '{}');
@@ -150,6 +187,7 @@ const siteTreeData = {
       { label: '판매 등록', full: '판매 등록', access: 'all', note: '상품 검색 → 수량 → 판매일 → 목록 담기 → 결제수단 → 등록', data: ['rpc_create_sale', 'products'] },
       { label: '판매 내역', full: '월별 판매 내역', access: 'all', note: '일자별 · 품목별 판매수량과 매출액', data: ['sales', 'sale_items'], insight: 2 }
     ] },
+    { label: '접종 관리', full: '접종 관리', access: 'all', note: '이름을 음성 또는 텍스트로 검색해 보호자 연락처, 진료기록, 방문·접종 이력을 확인합니다.', data: ['pets', 'owners', 'pet_visits'] },
     { label: '입고', full: '입고 관리', access: 'admin', note: '입고를 등록하고 재고 수불부를 확인합니다. 직원에게는 메뉴가 보이지 않습니다.', insight: 1, children: [
       { label: '입고 등록', full: '입고 등록', access: 'admin', note: '거래처 · 입고일 · 단가 · 로트 · 유효기간', data: ['rpc_receive_purchase', 'suppliers'] },
       { label: '수불부', full: '월별 재고 수불부', access: 'admin', note: '기초 · 입고 · 출고 · 재고 수량', data: ['inventory_movements', 'products'], insight: 1 }
@@ -1153,6 +1191,104 @@ function prepareSales() {
   document.querySelector('#saleMessage').textContent = '상품을 선택해 판매 목록에 담으세요.';
 }
 
+function preparePetSearch() {
+  petSearchInput.disabled = false;
+  petSearchButton.disabled = false;
+  petMicButton.disabled = !petRecognition;
+  petSearchHint.hidden = true;
+  petSearchMessage.textContent = '';
+}
+
+async function searchPets(name) {
+  const query = name.trim();
+  petDetailPanel.hidden = true;
+  if (!query) { petSearchMessage.textContent = '이름을 입력하거나 말해 주세요.'; return; }
+  petSearchMessage.textContent = '검색 중...';
+  try {
+    const response = await api('rpc/rpc_search_pets_by_name', { method: 'POST', body: JSON.stringify({ p_name: query }) });
+    if (!response.ok) throw new Error('검색에 실패했습니다.');
+    renderPetCandidates(await response.json());
+  } catch (error) {
+    petSearchMessage.textContent = error.message;
+    petCandidatesWrap.hidden = true;
+  }
+}
+
+function renderPetCandidates(results) {
+  if (!results.length) {
+    petCandidatesWrap.hidden = true;
+    petSearchMessage.textContent = '일치하는 반려동물을 찾지 못했습니다. 이름을 다시 확인해 주세요.';
+    return;
+  }
+  petSearchMessage.textContent = `${results.length}건을 찾았습니다. 하나를 선택하세요.`;
+  petCandidatesWrap.hidden = false;
+  petCandidateRows.replaceChildren(...results.map((pet) => {
+    const row = document.createElement('tr');
+    [pet.pet_name, petSpeciesLabel[pet.species] || pet.species, pet.breed || '—', pet.last_visit_on || '—', pet.owner_name_masked].forEach((value) => {
+      const cell = document.createElement('td'); cell.textContent = value; row.append(cell);
+    });
+    const actionCell = document.createElement('td');
+    const button = document.createElement('button');
+    button.type = 'button'; button.className = 'pet-candidate-select'; button.textContent = '상세보기';
+    button.addEventListener('click', () => showPetDetail(pet.pet_id));
+    actionCell.append(button);
+    row.append(actionCell);
+    return row;
+  }));
+}
+
+async function showPetDetail(petId) {
+  petSearchMessage.textContent = '불러오는 중...';
+  try {
+    const [detailResponse, visitResponse] = await Promise.all([
+      api('rpc/rpc_get_pet_detail', { method: 'POST', body: JSON.stringify({ p_pet_id: petId }) }),
+      api(`pet_visits?select=visit_date,record,detail&pet_id=eq.${petId}&order=visit_date.desc.nullslast`)
+    ]);
+    if (!detailResponse.ok) throw new Error('상세 정보를 불러오지 못했습니다.');
+    const [detail] = await detailResponse.json();
+    if (!detail) throw new Error('상세 정보를 찾지 못했습니다.');
+    renderPetDetail(detail, visitResponse.ok ? await visitResponse.json() : []);
+    petSearchMessage.textContent = '';
+  } catch (error) {
+    petSearchMessage.textContent = error.message;
+  }
+}
+
+function renderPetDetail(detail, visits) {
+  petDetailPanel.hidden = false;
+  petDetailName.textContent = `${detail.pet_name} (${petSpeciesLabel[detail.species] || detail.species}${detail.breed ? ' · ' + detail.breed : ''})`;
+  const fields = [
+    ['보호자', detail.owner_name || '—'],
+    ['연락처', detail.owner_phone || '—'],
+    ['성별', `${petSexLabel[detail.sex] || '미상'}${detail.neutered ? ' (중성화)' : ''}`],
+    ['생년월일', detail.birth_date || '—'],
+    ['체중', detail.weight_kg ? `${detail.weight_kg}kg` : '—'],
+    ['털색', detail.coat_color || '—'],
+    ['마지막 방문일', detail.last_visit_on || '—']
+  ];
+  petDetailInfo.replaceChildren(...fields.map(([label, value]) => {
+    const div = document.createElement('div');
+    const labelSpan = document.createElement('span'); labelSpan.textContent = label;
+    const valueTag = document.createElement('b'); valueTag.textContent = value;
+    div.append(labelSpan, valueTag);
+    return div;
+  }));
+  petDetailNotes.textContent = detail.notes || '기록된 진료기록이 없습니다.';
+  if (!visits.length) {
+    petVisitRows.replaceChildren();
+    petVisitEmpty.hidden = false;
+  } else {
+    petVisitEmpty.hidden = true;
+    petVisitRows.replaceChildren(...visits.map((visit) => {
+      const row = document.createElement('tr');
+      [visit.visit_date, visit.record || '—', visit.detail || '—'].forEach((value) => {
+        const cell = document.createElement('td'); cell.textContent = value ?? '—'; row.append(cell);
+      });
+      return row;
+    }));
+  }
+}
+
 function renderPurchaseProductOptions(keyword = '') {
   const candidates = products.filter((product) => product.track_stock && matchesProduct(product, keyword)).slice(0, 20);
   purchaseProductOptions.replaceChildren(...candidates.map((product) => {
@@ -1300,6 +1436,14 @@ loginButton.addEventListener('click', () => {
   loginDialog.showModal();
 });
 document.querySelector('#closeLogin').addEventListener('click', () => loginDialog.close());
+petSearchButton.addEventListener('click', () => searchPets(petSearchInput.value));
+petSearchInput.addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); searchPets(petSearchInput.value); } });
+petMicButton.addEventListener('click', () => {
+  if (!petRecognition) return;
+  petMicButton.classList.add('listening');
+  petSearchMessage.textContent = '듣는 중... 반려동물 이름을 말씀해 주세요.';
+  try { petRecognition.start(); } catch { petMicButton.classList.remove('listening'); }
+});
 productSearch.addEventListener('input', () => renderProducts(productSearch.value));
 ledgerMonth.addEventListener('change', (event) => {
   selectedLedgerMonth = event.target.value;
@@ -1354,6 +1498,7 @@ document.querySelector('#loginForm').addEventListener('submit', async (event) =>
     productTableWrap.hidden = false;
     renderProducts();
     prepareSales();
+    preparePetSearch();
     const profileResponse = await fetch(`${config.supabaseUrl}/rest/v1/profiles?select=role&id=eq.${session.user.id}`, { headers: { apikey: config.supabasePublishableKey, Authorization: `Bearer ${accessToken}` } });
     const profile = profileResponse.ok ? (await profileResponse.json())[0] : null;
     currentProfile = profile;
