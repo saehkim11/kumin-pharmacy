@@ -1131,6 +1131,13 @@ async function loadDashboard() {
   } catch (error) {
     return;
   }
+  if (!sales.length) {
+    setDashboardValue(0, '0원', '등록된 판매가 없습니다');
+    setDashboardValue(1, '0건', '등록된 판매가 없습니다');
+    await showStockAlert(null);
+    setDashboardValue(3, '—', '판매 데이터 연결 후 표시');
+    return;
+  }
   const latestDay = sales.map((sale) => sale.sold_at.slice(0, 10)).sort().at(-1);
   const latestMonth = latestDay?.slice(0, 7);
   const todaySales = sales.filter((sale) => sale.sold_at.slice(0, 10) === latestDay);
