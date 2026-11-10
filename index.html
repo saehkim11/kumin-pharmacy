@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>pharmacy management</title>
-    <link rel="stylesheet" href="styles.css?v=20261110d" />
+    <link rel="stylesheet" href="styles.css?v=20261110g" />
   </head>
   <body>
     <div class="app-shell">
@@ -73,11 +73,13 @@
                 <input id="saleDate" type="date" disabled />
               </div>
               <div class="sale-pet-field">
-                <label for="salePetSearch">반려동물 <span>(선택)</span></label>
+                <div class="field-label-row">
+                  <label for="salePetSearch">반려동물 <span>(선택)</span></label>
+                  <button class="link-button" id="salePetNewButton" type="button" disabled>+ 신규</button>
+                </div>
                 <input id="salePetSearch" type="search" placeholder="이름(보호자) — 안 고르면 미지정" list="salePetOptions" autocomplete="off" disabled />
                 <input id="salePetId" type="hidden" value="" />
                 <datalist id="salePetOptions"></datalist>
-                <button class="link-button" id="salePetNewButton" type="button" disabled>+ 새 보호자·반려동물 등록</button>
               </div>
               <button class="login-button" id="addSaleItem" type="button" disabled>판매 목록에 담기</button>
             </div>
@@ -103,14 +105,16 @@
             <p class="empty-message" id="petSearchHint">로그인하면 반려동물 이름으로 검색할 수 있습니다.</p>
             <div class="toolbar pet-search-toolbar">
               <div class="pet-search-field">
-                <label for="petSearchInput">반려동물 이름</label>
+                <div class="field-label-row">
+                  <label for="petSearchInput">반려동물 이름</label>
+                  <button class="link-button" id="newPetToggle" type="button" disabled>+ 처음 방문하는 보호자·반려동물 등록</button>
+                </div>
                 <input id="petSearchInput" type="search" placeholder="이름을 입력하거나 마이크를 눌러 말하세요" autocomplete="off" disabled />
               </div>
               <button class="login-button icon-button" id="petMicButton" type="button" disabled title="마이크로 이름 말하기">🎤</button>
               <button class="login-button" id="petSearchButton" type="button" disabled>검색</button>
             </div>
             <p class="form-message" id="petSearchMessage"></p>
-            <button class="link-button" id="newPetToggle" type="button" disabled>+ 처음 방문하는 보호자·반려동물 등록</button>
             <div class="table-wrap" hidden id="petCandidatesWrap">
               <table><thead><tr><th>이름</th><th>종류</th><th>품종</th><th>마지막 방문일</th><th>보호자</th><th></th></tr></thead><tbody id="petCandidateRows"></tbody></table>
             </div>
