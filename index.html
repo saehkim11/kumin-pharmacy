@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>pharmacy management</title>
-    <link rel="stylesheet" href="styles.css?v=20261110g" />
+    <link rel="stylesheet" href="styles.css?v=20261110h" />
   </head>
   <body>
     <div class="app-shell">
@@ -87,10 +87,11 @@
             <div class="sale-footer" hidden id="saleFooter"><strong id="saleTotal">합계 0원</strong><div><select id="paymentMethod"><option value="card">카드</option><option value="cash">현금</option></select><button class="login-button" id="submitSale" type="button">판매 등록</button></div></div>
             <p class="empty-message" id="saleMessage">로그인하면 판매를 등록할 수 있습니다.</p>
             <section class="sales-history" aria-labelledby="salesHistoryTitle">
-              <div class="stock-lookup-heading"><div><p class="eyebrow">SALES LEDGER</p><h3 id="salesHistoryTitle">월별 판매 내역</h3></div><label for="salesHistoryMonth">조회 월<select id="salesHistoryMonth" disabled></select></label></div>
+              <div class="stock-lookup-heading"><div><p class="eyebrow">SALES LEDGER</p><h3 id="salesHistoryTitle">월별 판매 내역</h3></div></div>
               <div class="history-tabs" role="tablist" aria-label="판매 내역 보기 방식">
                 <button type="button" role="tab" class="history-tab active" data-history-view="daily" aria-selected="true">일자별</button>
                 <button type="button" role="tab" class="history-tab" data-history-view="product" aria-selected="false">품목별</button>
+                <label for="salesHistoryMonth" class="history-month-label">조회 월<select id="salesHistoryMonth" disabled></select></label>
               </div>
               <p class="ledger-summary" id="salesHistorySummary" hidden></p>
               <p class="empty-message" id="salesHistoryMessage">로그인하면 판매 내역을 볼 수 있습니다.</p>
