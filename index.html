@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>pharmacy management</title>
-    <link rel="stylesheet" href="styles.css?v=20261110j" />
+    <link rel="stylesheet" href="styles.css?v=20261110k" />
   </head>
   <body>
     <div class="app-shell">
@@ -193,7 +193,11 @@
               <div><label for="legacySalesSearch">상품명 검색 <span>(선택)</span></label><input id="legacySalesSearch" type="search" placeholder="상품명으로 필터" autocomplete="off" /></div>
             </div>
             <p class="ledger-summary" id="legacySalesMonthSummary" hidden></p>
-            <div class="table-wrap"><table class="history-table"><thead><tr><th>일자</th><th>상품명</th><th>수량</th><th>단가</th><th>금액</th><th>마진율</th></tr></thead><tbody id="legacySalesRows"></tbody></table></div>
+            <div class="bi-chart legacy-sales-chart">
+              <h3>일별 매출 추이 <span class="chart-legend-inline"><i class="legend-dot weekday"></i>평일 <i class="legend-dot weekend"></i>주말 <i class="legend-dot holiday"></i>공휴일·명절</span></h3>
+              <div class="bar-chart" id="legacySalesChart"></div>
+            </div>
+            <div class="table-wrap"><table class="history-table"><thead><tr><th>일자</th><th>요일</th><th>상품명</th><th>수량</th><th>단가</th><th>금액</th><th>마진율</th></tr></thead><tbody id="legacySalesRows"></tbody></table></div>
             <p class="empty-message" id="legacySalesEmpty" hidden>해당 월의 매출 데이터가 없습니다.</p>
           </section>
         </section>
@@ -254,6 +258,6 @@
       <p class="form-message" id="newPetFormMessage"></p>
     </dialog>
     <script src="config.js"></script>
-    <script src="app.js?v=20261110g"></script>
+    <script src="app.js?v=20261110h"></script>
   </body>
 </html>

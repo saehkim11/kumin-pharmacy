@@ -469,6 +469,30 @@ const legacySalesSummary = document.querySelector('#legacySalesSummary');
 const legacySalesMonthSummary = document.querySelector('#legacySalesMonthSummary');
 const legacySalesRows = document.querySelector('#legacySalesRows');
 const legacySalesEmpty = document.querySelector('#legacySalesEmpty');
+const legacySalesChart = document.querySelector('#legacySalesChart');
+const weekdayLabel = ['일', '월', '화', '수', '목', '금', '토'];
+// 2024~2026 대한민국 공휴일·명절(대체공휴일 포함). 매출 데이터 기간(2024-03~2026-10)만 다룸
+const KOREA_HOLIDAYS = {
+  '2024-03-01': '삼일절', '2024-05-05': '어린이날', '2024-05-06': '대체공휴일', '2024-05-15': '부처님오신날',
+  '2024-06-06': '현충일', '2024-08-15': '광복절',
+  '2024-09-16': '추석연휴', '2024-09-17': '추석', '2024-09-18': '추석연휴',
+  '2024-10-03': '개천절', '2024-10-09': '한글날', '2024-12-25': '크리스마스',
+  '2025-01-01': '신정', '2025-01-28': '설날연휴', '2025-01-29': '설날', '2025-01-30': '설날연휴',
+  '2025-03-01': '삼일절', '2025-03-03': '대체공휴일',
+  '2025-05-05': '어린이날·부처님오신날', '2025-05-06': '대체공휴일', '2025-06-06': '현충일', '2025-08-15': '광복절',
+  '2025-10-03': '개천절', '2025-10-05': '추석연휴', '2025-10-06': '추석', '2025-10-07': '추석연휴',
+  '2025-10-08': '대체공휴일', '2025-10-09': '한글날', '2025-12-25': '크리스마스',
+  '2026-01-01': '신정', '2026-02-16': '설날연휴', '2026-02-17': '설날', '2026-02-18': '설날연휴',
+  '2026-03-01': '삼일절', '2026-03-02': '대체공휴일', '2026-05-05': '어린이날', '2026-05-24': '부처님오신날',
+  '2026-05-25': '대체공휴일', '2026-06-06': '현충일', '2026-08-15': '광복절', '2026-08-17': '대체공휴일',
+  '2026-09-24': '추석연휴', '2026-09-25': '추석', '2026-09-26': '추석연휴', '2026-10-03': '개천절',
+  '2026-10-05': '대체공휴일', '2026-10-09': '한글날', '2026-12-25': '크리스마스'
+};
+function dateMeta(dateText) {
+  const day = new Date(`${dateText}T00:00:00`).getDay();
+  const holiday = KOREA_HOLIDAYS[dateText];
+  return { weekday: weekdayLabel[day], isWeekend: day === 0 || day === 6, holiday };
+}
 
 async function loadLegacySales() {
   try {
@@ -490,9 +514,36 @@ async function loadLegacySales() {
   renderLegacySales();
 }
 
+function renderLegacySalesChart(monthRows) {
+  const byDay = new Map();
+  monthRows.forEach((row) => byDay.set(row.sold_on, (byDay.get(row.sold_on) || 0) + Number(row.amount || 0)));
+  const [year, month] = selectedLegacySalesMonth.split('-').map(Number);
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const dayAmounts = [];
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    const dateText = `${selectedLegacySalesMonth}-${String(day).padStart(2, '0')}`;
+    dayAmounts.push({ day, dateText, amount: byDay.get(dateText) || 0, meta: dateMeta(dateText) });
+  }
+  const max = Math.max(...dayAmounts.map((d) => d.amount), 1);
+  legacySalesChart.replaceChildren(...dayAmounts.map(({ day, amount, meta }) => {
+    const item = document.createElement('div');
+    item.className = `bar-item${meta.holiday ? ' holiday' : meta.isWeekend ? ' weekend' : ''}`;
+    item.title = `${selectedLegacySalesMonth}-${String(day).padStart(2, '0')} (${meta.weekday})${meta.holiday ? ' · ' + meta.holiday : ''} · ${won(amount)}`;
+    const bar = document.createElement('i');
+    bar.style.height = `${Math.max((amount / max) * 100, amount > 0 ? 3 : 0)}%`;
+    const value = document.createElement('span');
+    value.className = 'bar-value';
+    value.textContent = amount > 0 ? Math.round(amount / 1000) : '';
+    item.append(bar, value, document.createTextNode(String(day)));
+    return item;
+  }));
+}
+
 function renderLegacySales() {
   const keyword = legacySalesSearch.value.trim().toLowerCase();
-  const rows = legacySales.filter((row) => row.sold_on.startsWith(selectedLegacySalesMonth) && (!keyword || row.product_name_raw.toLowerCase().includes(keyword)));
+  const monthRows = legacySales.filter((row) => row.sold_on.startsWith(selectedLegacySalesMonth));
+  renderLegacySalesChart(monthRows);
+  const rows = monthRows.filter((row) => !keyword || row.product_name_raw.toLowerCase().includes(keyword));
   if (!rows.length) {
     legacySalesMonthSummary.hidden = true;
     legacySalesRows.replaceChildren();
@@ -505,7 +556,10 @@ function renderLegacySales() {
   legacySalesMonthSummary.textContent = `${selectedLegacySalesMonth} · ${rows.length.toLocaleString('ko-KR')}건 · 매출액 ${won(totalAmount)}`;
   legacySalesRows.replaceChildren(...rows.map((row) => {
     const tr = document.createElement('tr');
-    [row.sold_on, row.product_name_raw, row.quantity, won(row.unit_price), won(row.amount), row.margin_rate == null ? '—' : `${(Number(row.margin_rate) * 100).toFixed(1)}%`].forEach((value) => {
+    const meta = dateMeta(row.sold_on);
+    const weekdayText = meta.holiday ? `${meta.weekday} · ${meta.holiday}` : meta.weekday;
+    if (meta.holiday) tr.classList.add('is-holiday'); else if (meta.isWeekend) tr.classList.add('is-weekend');
+    [row.sold_on, weekdayText, row.product_name_raw, row.quantity, won(row.unit_price), won(row.amount), row.margin_rate == null ? '—' : `${(Number(row.margin_rate) * 100).toFixed(1)}%`].forEach((value) => {
       const cell = document.createElement('td'); cell.textContent = value; tr.append(cell);
     });
     return tr;
