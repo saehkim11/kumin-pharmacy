@@ -1201,11 +1201,11 @@ async function showStockAlert(latestDay) {
 }
 
 async function refreshProductsAfterSale() {
-  const response = await fetch(`${config.supabaseUrl}/rest/v1/products?select=id,code,name,sale_price,track_stock,product_stock(quantity),product_costs(purchase_price),product_categories(name)&order=code`, {
-    headers: { apikey: config.supabasePublishableKey, Authorization: `Bearer ${accessToken}` }
-  });
-  if (!response.ok) throw new Error('최신 재고 정보를 불러오지 못했습니다.');
-  products = await response.json();
+  try {
+    products = await apiAll('products?select=id,code,name,sale_price,track_stock,product_stock(quantity),product_costs(purchase_price),product_categories(name)&order=code');
+  } catch {
+    throw new Error('최신 재고 정보를 불러오지 못했습니다.');
+  }
   if (currentProfile?.role === 'admin') {
     await loadInventoryMovements();
     prepareInventoryLedger();
@@ -1525,9 +1525,11 @@ async function signOut() {
 async function completeLogin(session) {
   accessToken = session.access_token;
   currentUser = session.user;
-  const response = await fetch(`${config.supabaseUrl}/rest/v1/products?select=id,code,name,sale_price,track_stock,product_stock(quantity),product_costs(purchase_price),product_categories(name)&order=code`, { headers: { apikey: config.supabasePublishableKey, Authorization: `Bearer ${accessToken}` } });
-  if (!response.ok) throw new Error('상품 정보를 불러오지 못했습니다.');
-  products = await response.json();
+  try {
+    products = await apiAll('products?select=id,code,name,sale_price,track_stock,product_stock(quantity),product_costs(purchase_price),product_categories(name)&order=code');
+  } catch {
+    throw new Error('상품 정보를 불러오지 못했습니다.');
+  }
   productSearch.disabled = false;
   productMessage.hidden = true;
   productTableWrap.hidden = false;
