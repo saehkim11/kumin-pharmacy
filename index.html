@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>pharmacy management</title>
-    <link rel="stylesheet" href="styles.css?v=20261110i" />
+    <link rel="stylesheet" href="styles.css?v=20261110j" />
   </head>
   <body>
     <div class="app-shell">
@@ -21,6 +21,7 @@
           <button class="nav-button" data-view="purchases" id="purchaseNav" hidden>입고 관리</button>
           <button class="nav-button" data-view="tasks">공유 업무</button>
           <button class="nav-button" data-view="analytics">분석</button>
+          <button class="nav-button" data-view="legacySales" id="legacySalesNav" hidden>매출관리</button>
           <button class="nav-button" data-view="structure" id="structureNav" hidden>사이트 구조</button>
         </nav>
         <p class="role-badge" id="roleBadge" aria-live="polite">현재 상태: 로그인 전</p>
@@ -86,7 +87,12 @@
             <div class="table-wrap" hidden id="saleTableWrap"><table><thead><tr><th>상품명</th><th>수량</th><th>금액</th><th>반려동물</th><th></th></tr></thead><tbody id="saleRows"></tbody></table></div>
             <div class="sale-footer" hidden id="saleFooter"><strong id="saleTotal">합계 0원</strong><div><select id="paymentMethod"><option value="card">카드</option><option value="cash">현금</option></select><button class="login-button" id="submitSale" type="button">판매 등록</button></div></div>
             <p class="empty-message" id="saleMessage">로그인하면 판매를 등록할 수 있습니다.</p>
-            <section class="sales-history" aria-labelledby="salesHistoryTitle">
+            <section class="sales-history" id="salePetHistorySection" hidden>
+              <div class="stock-lookup-heading"><div><p class="eyebrow">PET PURCHASE HISTORY</p><h3 id="salePetHistoryTitle">구매 이력</h3></div></div>
+              <div class="table-wrap"><table><thead><tr><th>일자</th><th>상품명</th><th>수량</th><th>금액</th></tr></thead><tbody id="salePetHistoryRows"></tbody></table></div>
+              <p class="empty-message" id="salePetHistoryEmpty" hidden>구매 이력이 없습니다.</p>
+            </section>
+            <section class="sales-history" id="salesHistorySection" aria-labelledby="salesHistoryTitle">
               <div class="stock-lookup-heading"><div><p class="eyebrow">SALES LEDGER</p><h3 id="salesHistoryTitle">월별 판매 내역</h3></div></div>
               <div class="history-tabs" role="tablist" aria-label="판매 내역 보기 방식">
                 <button type="button" role="tab" class="history-tab active" data-history-view="daily" aria-selected="true">일자별</button>
@@ -178,6 +184,20 @@
           </section>
         </section>
 
+        <section class="view" id="legacySales">
+          <section class="panel">
+            <p class="eyebrow">LEGACY SALES LEDGER</p><h2>매출관리</h2>
+            <p class="empty-message" id="legacySalesSummary">불러오는 중...</p>
+            <div class="toolbar legacy-sales-toolbar">
+              <div><label for="legacySalesMonth">조회 월</label><select id="legacySalesMonth"></select></div>
+              <div><label for="legacySalesSearch">상품명 검색 <span>(선택)</span></label><input id="legacySalesSearch" type="search" placeholder="상품명으로 필터" autocomplete="off" /></div>
+            </div>
+            <p class="ledger-summary" id="legacySalesMonthSummary" hidden></p>
+            <div class="table-wrap"><table class="history-table"><thead><tr><th>일자</th><th>상품명</th><th>수량</th><th>단가</th><th>금액</th><th>마진율</th></tr></thead><tbody id="legacySalesRows"></tbody></table></div>
+            <p class="empty-message" id="legacySalesEmpty" hidden>해당 월의 매출 데이터가 없습니다.</p>
+          </section>
+        </section>
+
         <section class="view" id="structure">
           <section class="panel">
             <p class="eyebrow">SITE MAP · ADMIN ONLY</p><h2>사이트 구조</h2>
@@ -234,6 +254,6 @@
       <p class="form-message" id="newPetFormMessage"></p>
     </dialog>
     <script src="config.js"></script>
-    <script src="app.js?v=20261110f"></script>
+    <script src="app.js?v=20261110g"></script>
   </body>
 </html>

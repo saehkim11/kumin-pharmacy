@@ -35,6 +35,8 @@ let analyticsForecast = null;
 let analyticsForecastError = '';
 let inventoryMovements = [];
 let selectedLedgerMonth = '';
+let legacySales = [];
+let selectedLegacySalesMonth = '';
 let salesHistoryRows = []; // 선택한 월의 판매항목(일자·상품·수량·금액)
 let salesHistoryView = 'daily';
 
@@ -47,6 +49,11 @@ const saleDate = document.querySelector('#saleDate');
 const salePetSearch = document.querySelector('#salePetSearch');
 const salePetId = document.querySelector('#salePetId');
 const salePetOptions = document.querySelector('#salePetOptions');
+const salePetHistorySection = document.querySelector('#salePetHistorySection');
+const salePetHistoryTitle = document.querySelector('#salePetHistoryTitle');
+const salePetHistoryRows = document.querySelector('#salePetHistoryRows');
+const salePetHistoryEmpty = document.querySelector('#salePetHistoryEmpty');
+const salesHistorySection = document.querySelector('#salesHistorySection');
 const petPurchaseRows = document.querySelector('#petPurchaseRows');
 const petPurchaseEmpty = document.querySelector('#petPurchaseEmpty');
 let salePetDirectory = new Map(); // label(이름(보호자)) -> pet_id, 판매 등록 시 반려동물 연결용
@@ -65,6 +72,40 @@ async function loadSalePetOptions() {
     salePetOptions.replaceChildren(...[...salePetDirectory.keys()].sort().map((label) => new Option(label)));
   } catch {
     // 자동완성 실패해도 판매 등록 자체는 계속 가능해야 함
+  }
+}
+
+// 반려동물을 선택하면 하단을 전체 월별 내역 대신 그 반려동물의 구매 이력으로 전환
+async function updateSalePetHistory() {
+  const label = salePetSearch.value.trim();
+  const petId = label ? salePetDirectory.get(label) : null;
+  if (!petId) {
+    salePetHistorySection.hidden = true;
+    salesHistorySection.hidden = false;
+    return;
+  }
+  salesHistorySection.hidden = true;
+  salePetHistorySection.hidden = false;
+  salePetHistoryTitle.textContent = `구매 이력 — ${label}`;
+  try {
+    const rows = await apiAll(`sale_items?select=quantity,amount,products(name),sales(sold_at)&pet_id=eq.${petId}`);
+    rows.sort((a, b) => (b.sales?.sold_at || '').localeCompare(a.sales?.sold_at || ''));
+    if (!rows.length) {
+      salePetHistoryRows.replaceChildren();
+      salePetHistoryEmpty.hidden = false;
+    } else {
+      salePetHistoryEmpty.hidden = true;
+      salePetHistoryRows.replaceChildren(...rows.map((row) => {
+        const tr = document.createElement('tr');
+        [row.sales?.sold_at?.slice(0, 10) || '—', row.products?.name || '—', row.quantity, `${Math.round(row.amount).toLocaleString('ko-KR')}원`].forEach((value) => {
+          const cell = document.createElement('td'); cell.textContent = value; tr.append(cell);
+        });
+        return tr;
+      }));
+    }
+  } catch {
+    salePetHistoryRows.replaceChildren();
+    salePetHistoryEmpty.hidden = false;
   }
 }
 const purchaseSupplier = document.querySelector('#purchaseSupplier');
@@ -420,6 +461,58 @@ function prepareInventoryLedger() {
   ledgerMonth.disabled = months.length === 0;
   renderProducts(productSearch.value);
 }
+
+const legacySalesMonth = document.querySelector('#legacySalesMonth');
+const legacySalesSearch = document.querySelector('#legacySalesSearch');
+const legacySalesSummary = document.querySelector('#legacySalesSummary');
+const legacySalesMonthSummary = document.querySelector('#legacySalesMonthSummary');
+const legacySalesRows = document.querySelector('#legacySalesRows');
+const legacySalesEmpty = document.querySelector('#legacySalesEmpty');
+
+async function loadLegacySales() {
+  try {
+    legacySales = await apiAll('sales_legacy?select=sold_on,product_name_raw,quantity,unit_price,amount,margin_rate&order=sold_on.desc');
+  } catch {
+    legacySalesSummary.textContent = '매출 데이터를 불러오지 못했습니다.';
+    return;
+  }
+  if (!legacySales.length) {
+    legacySalesSummary.textContent = '등록된 매출 데이터가 없습니다.';
+    return;
+  }
+  const dates = legacySales.map((row) => row.sold_on).sort();
+  const totalAmount = legacySales.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+  legacySalesSummary.textContent = `총 ${legacySales.length.toLocaleString('ko-KR')}건 · ${dates[0]} ~ ${dates.at(-1)} · 누적 매출액 ${won(totalAmount)}`;
+  const months = [...new Set(legacySales.map((row) => row.sold_on.slice(0, 7)))].sort().reverse();
+  selectedLegacySalesMonth = months.includes(selectedLegacySalesMonth) ? selectedLegacySalesMonth : months[0];
+  legacySalesMonth.replaceChildren(...months.map((month) => new Option(`${month.slice(0, 4)}년 ${Number(month.slice(5, 7))}월`, month, false, month === selectedLegacySalesMonth)));
+  renderLegacySales();
+}
+
+function renderLegacySales() {
+  const keyword = legacySalesSearch.value.trim().toLowerCase();
+  const rows = legacySales.filter((row) => row.sold_on.startsWith(selectedLegacySalesMonth) && (!keyword || row.product_name_raw.toLowerCase().includes(keyword)));
+  if (!rows.length) {
+    legacySalesMonthSummary.hidden = true;
+    legacySalesRows.replaceChildren();
+    legacySalesEmpty.hidden = false;
+    return;
+  }
+  legacySalesEmpty.hidden = true;
+  const totalAmount = rows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+  legacySalesMonthSummary.hidden = false;
+  legacySalesMonthSummary.textContent = `${selectedLegacySalesMonth} · ${rows.length.toLocaleString('ko-KR')}건 · 매출액 ${won(totalAmount)}`;
+  legacySalesRows.replaceChildren(...rows.map((row) => {
+    const tr = document.createElement('tr');
+    [row.sold_on, row.product_name_raw, row.quantity, won(row.unit_price), won(row.amount), row.margin_rate == null ? '—' : `${(Number(row.margin_rate) * 100).toFixed(1)}%`].forEach((value) => {
+      const cell = document.createElement('td'); cell.textContent = value; tr.append(cell);
+    });
+    return tr;
+  }));
+}
+
+legacySalesMonth.addEventListener('change', () => { selectedLegacySalesMonth = legacySalesMonth.value; renderLegacySales(); });
+legacySalesSearch.addEventListener('input', renderLegacySales);
 
 async function loadInventoryMovements() {
   const pageSize = 1000;
@@ -1558,6 +1651,8 @@ async function completeLogin(session) {
     document.querySelector('#ownerTaskForm').hidden = false;
     document.querySelector('#purchaseNav').hidden = false;
     document.querySelector('#structureNav').hidden = false;
+    document.querySelector('#legacySalesNav').hidden = false;
+    loadLegacySales();
     renderSiteStructure();
     document.querySelector('#purchaseQuickAction')?.removeAttribute('hidden');
     try {
@@ -1666,6 +1761,8 @@ function openNewPetDialog(origin) {
 }
 newPetToggle.addEventListener('click', () => openNewPetDialog('pets'));
 salePetNewButton.addEventListener('click', () => openNewPetDialog('sales'));
+salePetSearch.addEventListener('input', updateSalePetHistory);
+salePetSearch.addEventListener('change', updateSalePetHistory);
 document.querySelector('#closeNewPetDialog').addEventListener('click', () => newPetDialog.close());
 newPetForm.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -1704,6 +1801,7 @@ newPetForm.addEventListener('submit', async (event) => {
       salePetDirectory.set(label, newPetId);
       salePetOptions.append(new Option(label));
       salePetSearch.value = label;
+      updateSalePetHistory();
       document.querySelector('#saleMessage').textContent = `${label} 등록 완료 — 이 반려동물로 판매를 담을 수 있습니다.`;
       saleProductSearch.focus();
     } else {
