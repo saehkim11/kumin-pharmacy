@@ -99,9 +99,10 @@ const petVisitFormMessage = document.querySelector('#petVisitFormMessage');
 const petVisitRecordOptions = document.querySelector('#petVisitRecordOptions');
 const petVisitDetailOptions = document.querySelector('#petVisitDetailOptions');
 const newPetToggle = document.querySelector('#newPetToggle');
-const newPetPanel = document.querySelector('#newPetPanel');
+const newPetDialog = document.querySelector('#newPetDialog');
 const newPetForm = document.querySelector('#newPetForm');
 const newPetFormMessage = document.querySelector('#newPetFormMessage');
+const salePetNewButton = document.querySelector('#salePetNewButton');
 let selectedPetId = null;
 
 // 많이 쓰인 진료기록/상세 문구를 빈도순으로 datalist에 채워 자동완성으로 재사용할 수 있게 함
@@ -1244,6 +1245,7 @@ function prepareSales() {
   document.querySelector('#addSaleItem').disabled = false;
   document.querySelector('#saleMessage').textContent = '상품을 선택해 판매 목록에 담으세요.';
   salePetSearch.disabled = false;
+  salePetNewButton.disabled = false;
   salePetSearch.value = '';
   salePetId.value = '';
   loadSalePetOptions();
@@ -1645,11 +1647,17 @@ petVisitForm.addEventListener('submit', async (event) => {
     petVisitFormMessage.textContent = error.message;
   }
 });
-newPetToggle.addEventListener('click', () => {
-  newPetPanel.hidden = !newPetPanel.hidden;
-  newPetToggle.textContent = newPetPanel.hidden ? '+ 처음 방문하는 보호자·반려동물 등록' : '− 등록 양식 닫기';
-  if (!newPetPanel.hidden) document.querySelector('#newOwnerName').focus();
-});
+let newPetOrigin = 'pets'; // 'pets' | 'sales' — 등록 완료 후 어디로 이어줄지 구분
+
+function openNewPetDialog(origin) {
+  newPetOrigin = origin;
+  newPetFormMessage.textContent = '';
+  newPetDialog.showModal();
+  document.querySelector('#newOwnerName').focus();
+}
+newPetToggle.addEventListener('click', () => openNewPetDialog('pets'));
+salePetNewButton.addEventListener('click', () => openNewPetDialog('sales'));
+document.querySelector('#closeNewPetDialog').addEventListener('click', () => newPetDialog.close());
 newPetForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const ownerName = document.querySelector('#newOwnerName').value.trim();
@@ -1680,12 +1688,19 @@ newPetForm.addEventListener('submit', async (event) => {
       throw new Error(errorBody.message || '등록에 실패했습니다.');
     }
     const newPetId = await response.json();
+    const label = `${petName} (${ownerName})`;
     newPetForm.reset();
-    newPetFormMessage.textContent = '등록되었습니다. 아래에서 첫 방문 기록을 남길 수 있습니다.';
-    newPetPanel.hidden = true;
-    newPetToggle.textContent = '+ 처음 방문하는 보호자·반려동물 등록';
-    petCandidatesWrap.hidden = true;
-    await showPetDetail(newPetId);
+    newPetDialog.close();
+    if (newPetOrigin === 'sales') {
+      salePetDirectory.set(label, newPetId);
+      salePetOptions.append(new Option(label));
+      salePetSearch.value = label;
+      document.querySelector('#saleMessage').textContent = `${label} 등록 완료 — 이 반려동물로 판매를 담을 수 있습니다.`;
+      saleProductSearch.focus();
+    } else {
+      petCandidatesWrap.hidden = true;
+      await showPetDetail(newPetId);
+    }
   } catch (error) {
     newPetFormMessage.textContent = error.message;
   }
