@@ -44,6 +44,29 @@ const saleProductSuggestions = document.querySelector('#saleProductSuggestions')
 const saleProductHint = document.querySelector('#saleProductHint');
 const recentProductStorageKey = 'pharmacy-recent-products';
 const saleDate = document.querySelector('#saleDate');
+const salePetSearch = document.querySelector('#salePetSearch');
+const salePetId = document.querySelector('#salePetId');
+const salePetOptions = document.querySelector('#salePetOptions');
+const petPurchaseRows = document.querySelector('#petPurchaseRows');
+const petPurchaseEmpty = document.querySelector('#petPurchaseEmpty');
+let salePetDirectory = new Map(); // label(이름(보호자)) -> pet_id, 판매 등록 시 반려동물 연결용
+
+async function loadSalePetOptions() {
+  try {
+    const rows = await apiAll('pets?select=id,name,owner:owners(name)');
+    const labelCount = new Map();
+    rows.forEach((pet) => { const base = `${pet.name} (${pet.owner?.name || '보호자미상'})`; labelCount.set(base, (labelCount.get(base) || 0) + 1); });
+    salePetDirectory = new Map();
+    rows.forEach((pet) => {
+      const base = `${pet.name} (${pet.owner?.name || '보호자미상'})`;
+      const label = labelCount.get(base) > 1 ? `${base} #${pet.id}` : base;
+      salePetDirectory.set(label, pet.id);
+    });
+    salePetOptions.replaceChildren(...[...salePetDirectory.keys()].sort().map((label) => new Option(label)));
+  } catch {
+    // 자동완성 실패해도 판매 등록 자체는 계속 가능해야 함
+  }
+}
 const purchaseSupplier = document.querySelector('#purchaseSupplier');
 const purchaseDate = document.querySelector('#purchaseDate');
 const purchaseProductSearch = document.querySelector('#purchaseProductSearch');
@@ -1195,7 +1218,7 @@ function renderSale() {
   const total = saleItems.reduce((sum, item) => sum + item.sale_price * item.quantity, 0);
   rows.replaceChildren(...saleItems.map((item, index) => {
     const row = document.createElement('tr');
-    [item.name, item.quantity, `${(item.sale_price * item.quantity).toLocaleString('ko-KR')}원`].forEach((value) => {
+    [item.name, item.quantity, `${(item.sale_price * item.quantity).toLocaleString('ko-KR')}원`, item.petLabel || '—'].forEach((value) => {
       const cell = document.createElement('td'); cell.textContent = value; row.append(cell);
     });
     const removeCell = document.createElement('td');
@@ -1220,6 +1243,10 @@ function prepareSales() {
   saleDate.value = getLocalDate();
   document.querySelector('#addSaleItem').disabled = false;
   document.querySelector('#saleMessage').textContent = '상품을 선택해 판매 목록에 담으세요.';
+  salePetSearch.disabled = false;
+  salePetSearch.value = '';
+  salePetId.value = '';
+  loadSalePetOptions();
 }
 
 function preparePetSearch() {
@@ -1273,21 +1300,24 @@ async function showPetDetail(petId) {
   selectedPetId = petId;
   petSearchMessage.textContent = '불러오는 중...';
   try {
-    const [detailResponse, visitResponse] = await Promise.all([
+    const [detailResponse, visitResponse, purchaseResponse] = await Promise.all([
       api('rpc/rpc_get_pet_detail', { method: 'POST', body: JSON.stringify({ p_pet_id: petId }) }),
-      api(`pet_visits?select=visit_date,record,detail&pet_id=eq.${petId}&order=visit_date.desc.nullslast`)
+      api(`pet_visits?select=visit_date,record,detail&pet_id=eq.${petId}&order=visit_date.desc.nullslast`),
+      api(`sale_items?select=quantity,amount,products(name),sales(sold_at)&pet_id=eq.${petId}`)
     ]);
     if (!detailResponse.ok) throw new Error('상세 정보를 불러오지 못했습니다.');
     const [detail] = await detailResponse.json();
     if (!detail) throw new Error('상세 정보를 찾지 못했습니다.');
-    renderPetDetail(detail, visitResponse.ok ? await visitResponse.json() : []);
+    const purchases = purchaseResponse.ok ? await purchaseResponse.json() : [];
+    purchases.sort((a, b) => (b.sales?.sold_at || '').localeCompare(a.sales?.sold_at || ''));
+    renderPetDetail(detail, visitResponse.ok ? await visitResponse.json() : [], purchases);
     petSearchMessage.textContent = '';
   } catch (error) {
     petSearchMessage.textContent = error.message;
   }
 }
 
-function renderPetDetail(detail, visits) {
+function renderPetDetail(detail, visits, purchases = []) {
   petDetailPanel.hidden = false;
   petDetailName.textContent = `${detail.pet_name} (${petSpeciesLabel[detail.species] || detail.species}${detail.breed ? ' · ' + detail.breed : ''})`;
   const fields = [
@@ -1324,6 +1354,20 @@ function renderPetDetail(detail, visits) {
   petVisitRecord.value = '';
   petVisitDetail.value = '';
   petVisitFormMessage.textContent = '';
+
+  if (!purchases.length) {
+    petPurchaseRows.replaceChildren();
+    petPurchaseEmpty.hidden = false;
+  } else {
+    petPurchaseEmpty.hidden = true;
+    petPurchaseRows.replaceChildren(...purchases.map((row) => {
+      const tr = document.createElement('tr');
+      [row.sales?.sold_at?.slice(0, 10) || '—', row.products?.name || '—', row.quantity, `${Math.round(row.amount).toLocaleString('ko-KR')}원`].forEach((value) => {
+        const cell = document.createElement('td'); cell.textContent = value; tr.append(cell);
+      });
+      return tr;
+    }));
+  }
 }
 
 function renderPurchaseProductOptions(keyword = '') {
@@ -1700,9 +1744,11 @@ document.querySelector('#addSaleItem').addEventListener('click', () => {
   const quantity = Number(document.querySelector('#saleQuantity').value);
   if (!selected) { saleProductSearch.focus(); saleProductHint.textContent = '목록에서 상품을 하나 선택해 주세요.'; return; }
   if (!Number.isFinite(quantity) || quantity <= 0) { document.querySelector('#saleQuantity').focus(); return; }
-  const existing = saleItems.find((item) => item.id === selected.id);
+  const petLabel = salePetSearch.value.trim();
+  const petId = petLabel ? salePetDirectory.get(petLabel) || null : null;
+  const existing = saleItems.find((item) => item.id === selected.id && item.petId === petId);
   if (existing) existing.quantity += quantity;
-  else saleItems.push({ ...selected, quantity });
+  else saleItems.push({ ...selected, quantity, petId, petLabel: petId ? petLabel : null });
   rememberProduct(selected);
   renderSale();
   saleProductValue.value = '';
@@ -1751,7 +1797,7 @@ document.querySelector('#submitSale').addEventListener('click', async () => {
     const response = await fetch(`${config.supabaseUrl}/rest/v1/rpc/rpc_create_sale`, {
       method: 'POST',
       headers: { apikey: config.supabasePublishableKey, Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ p_idempotency_key: crypto.randomUUID(), p_payment_method: document.querySelector('#paymentMethod').value, p_items: saleItems.map((item) => ({ product_id: item.id, quantity: item.quantity })), ...(saleDate.value !== getLocalDate() ? { p_sold_at: saleDate.value } : {}) })
+      body: JSON.stringify({ p_idempotency_key: crypto.randomUUID(), p_payment_method: document.querySelector('#paymentMethod').value, p_items: saleItems.map((item) => ({ product_id: item.id, quantity: item.quantity, pet_id: item.petId || null })), ...(saleDate.value !== getLocalDate() ? { p_sold_at: saleDate.value } : {}) })
     });
     if (!response.ok) {
       const errorBody = await response.json().catch(() => ({}));
@@ -1759,6 +1805,7 @@ document.querySelector('#submitSale').addEventListener('click', async () => {
     }
     const saleId = await response.json();
     saleItems = []; renderSale();
+    salePetSearch.value = ''; salePetId.value = '';
     try {
       await Promise.all([refreshProductsAfterSale(), loadDashboard(), prepareSalesHistory()]);
       message.textContent = `판매가 등록되었습니다. 판매 번호: ${saleId} · 대시보드와 판매 내역에 반영되었습니다.`;

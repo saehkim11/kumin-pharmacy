@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>pharmacy management</title>
-    <link rel="stylesheet" href="styles.css?v=20261109g" />
+    <link rel="stylesheet" href="styles.css?v=20261110a" />
   </head>
   <body>
     <div class="app-shell">
@@ -72,9 +72,15 @@
                 <label for="saleDate">판매일</label>
                 <input id="saleDate" type="date" disabled />
               </div>
+              <div class="sale-pet-field">
+                <label for="salePetSearch">반려동물 <span>(선택)</span></label>
+                <input id="salePetSearch" type="search" placeholder="이름(보호자) — 안 고르면 미지정" list="salePetOptions" autocomplete="off" disabled />
+                <input id="salePetId" type="hidden" value="" />
+                <datalist id="salePetOptions"></datalist>
+              </div>
               <button class="login-button" id="addSaleItem" type="button" disabled>판매 목록에 담기</button>
             </div>
-            <div class="table-wrap" hidden id="saleTableWrap"><table><thead><tr><th>상품명</th><th>수량</th><th>금액</th><th></th></tr></thead><tbody id="saleRows"></tbody></table></div>
+            <div class="table-wrap" hidden id="saleTableWrap"><table><thead><tr><th>상품명</th><th>수량</th><th>금액</th><th>반려동물</th><th></th></tr></thead><tbody id="saleRows"></tbody></table></div>
             <div class="sale-footer" hidden id="saleFooter"><strong id="saleTotal">합계 0원</strong><div><select id="paymentMethod"><option value="card">카드</option><option value="cash">현금</option></select><button class="login-button" id="submitSale" type="button">판매 등록</button></div></div>
             <p class="empty-message" id="saleMessage">로그인하면 판매를 등록할 수 있습니다.</p>
             <section class="sales-history" aria-labelledby="salesHistoryTitle">
@@ -132,6 +138,9 @@
               <h4>방문·접종 이력 (일자별)</h4>
               <div class="table-wrap"><table><thead><tr><th>일자</th><th>진료기록</th><th>상세</th></tr></thead><tbody id="petVisitRows"></tbody></table></div>
               <p class="empty-message" id="petVisitEmpty" hidden>방문·접종 이력이 없습니다.</p>
+              <h4>구매 이력 (판매 관리 연동, 오늘부터)</h4>
+              <div class="table-wrap"><table><thead><tr><th>일자</th><th>상품명</th><th>수량</th><th>금액</th></tr></thead><tbody id="petPurchaseRows"></tbody></table></div>
+              <p class="empty-message" id="petPurchaseEmpty" hidden>구매 이력이 없습니다. (과거 판매 데이터는 반려동물과 연결돼 있지 않습니다)</p>
               <h4>새 접종·방문 등록</h4>
               <form class="pet-visit-form" id="petVisitForm">
                 <div><label for="petVisitDate">일자</label><input id="petVisitDate" type="date" required /></div>
@@ -217,6 +226,6 @@
       </form>
     </dialog>
     <script src="config.js"></script>
-    <script src="app.js?v=20261109g"></script>
+    <script src="app.js?v=20261110a"></script>
   </body>
 </html>
