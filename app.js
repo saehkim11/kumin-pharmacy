@@ -297,6 +297,7 @@ const siteTreeData = {
       { label: '매출 KPI', full: '매출 KPI', access: 'admin', note: '매출 · 주문 · 판매 수량 · 평균 주문금액', data: ['sales', 'sale_items'], insight: 3 },
       { label: '계절 알림', full: '날씨·계절 수요 알림', access: 'admin', note: '전년 동일 시점 수요 비교와 서울 7일 예보', data: ['environmental_data', '외부 예보(open-meteo)'], insight: 5 }
     ] },
+    { label: '매출관리', full: '매출관리', access: 'admin', note: '가져오기 전 과거 매출(sales_legacy) 3,507건을 월별·상품명으로 조회합니다. 조회 전용, 신규 판매 등록은 판매 관리에서 합니다.', data: ['sales_legacy'] },
     { label: '사이트 구조', full: '사이트 구조', access: 'admin', note: '지금 보고 계신 화면입니다.' },
     { label: '로그인', full: '로그인 · 권한', access: 'all', note: '로그인하면 왼쪽 아래에 현재 권한(admin 또는 staff)이 표시되고 메뉴 노출이 정해집니다.', data: ['Auth', 'profiles'] }
   ]
