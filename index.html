@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>pharmacy management</title>
-    <link rel="stylesheet" href="styles.css?v=20261110b" />
+    <link rel="stylesheet" href="styles.css?v=20261110d" />
   </head>
   <body>
     <div class="app-shell">
@@ -74,12 +74,10 @@
               </div>
               <div class="sale-pet-field">
                 <label for="salePetSearch">반려동물 <span>(선택)</span></label>
-                <div class="sale-pet-row">
-                  <input id="salePetSearch" type="search" placeholder="이름(보호자) — 안 고르면 미지정" list="salePetOptions" autocomplete="off" disabled />
-                  <button class="logout-button" id="salePetNewButton" type="button" disabled title="새 보호자·반려동물 등록">+ 신규</button>
-                </div>
+                <input id="salePetSearch" type="search" placeholder="이름(보호자) — 안 고르면 미지정" list="salePetOptions" autocomplete="off" disabled />
                 <input id="salePetId" type="hidden" value="" />
                 <datalist id="salePetOptions"></datalist>
+                <button class="link-button" id="salePetNewButton" type="button" disabled>+ 새 보호자·반려동물 등록</button>
               </div>
               <button class="login-button" id="addSaleItem" type="button" disabled>판매 목록에 담기</button>
             </div>
@@ -108,11 +106,11 @@
                 <label for="petSearchInput">반려동물 이름</label>
                 <input id="petSearchInput" type="search" placeholder="이름을 입력하거나 마이크를 눌러 말하세요" autocomplete="off" disabled />
               </div>
-              <button class="login-button" id="petMicButton" type="button" disabled title="마이크로 이름 말하기">🎤 음성으로 검색</button>
+              <button class="login-button icon-button" id="petMicButton" type="button" disabled title="마이크로 이름 말하기">🎤</button>
               <button class="login-button" id="petSearchButton" type="button" disabled>검색</button>
             </div>
             <p class="form-message" id="petSearchMessage"></p>
-            <button class="logout-button" id="newPetToggle" type="button" disabled>+ 처음 방문하는 보호자·반려동물 등록</button>
+            <button class="link-button" id="newPetToggle" type="button" disabled>+ 처음 방문하는 보호자·반려동물 등록</button>
             <div class="table-wrap" hidden id="petCandidatesWrap">
               <table><thead><tr><th>이름</th><th>종류</th><th>품종</th><th>마지막 방문일</th><th>보호자</th><th></th></tr></thead><tbody id="petCandidateRows"></tbody></table>
             </div>
@@ -124,9 +122,6 @@
               <h4>방문·접종 이력 (일자별)</h4>
               <div class="table-wrap"><table><thead><tr><th>일자</th><th>진료기록</th><th>상세</th></tr></thead><tbody id="petVisitRows"></tbody></table></div>
               <p class="empty-message" id="petVisitEmpty" hidden>방문·접종 이력이 없습니다.</p>
-              <h4>구매 이력 (판매 관리 연동, 오늘부터)</h4>
-              <div class="table-wrap"><table><thead><tr><th>일자</th><th>상품명</th><th>수량</th><th>금액</th></tr></thead><tbody id="petPurchaseRows"></tbody></table></div>
-              <p class="empty-message" id="petPurchaseEmpty" hidden>구매 이력이 없습니다. (과거 판매 데이터는 반려동물과 연결돼 있지 않습니다)</p>
               <h4>새 접종·방문 등록</h4>
               <form class="pet-visit-form" id="petVisitForm">
                 <div><label for="petVisitDate">일자</label><input id="petVisitDate" type="date" required /></div>
@@ -134,6 +129,11 @@
                 <div><label for="petVisitDetail">상세 <span>(선택)</span></label><input id="petVisitDetail" type="text" maxlength="200" placeholder="예: 다음 접종 2주 후" list="petVisitDetailOptions" autocomplete="off" /><datalist id="petVisitDetailOptions"></datalist></div>
                 <button class="login-button" type="submit">등록</button>
               </form>
+              <section class="pet-purchase-section">
+                <h4>구매 이력 (판매 관리 연동, 오늘부터)</h4>
+                <div class="table-wrap"><table><thead><tr><th>일자</th><th>상품명</th><th>수량</th><th>금액</th></tr></thead><tbody id="petPurchaseRows"></tbody></table></div>
+                <p class="empty-message" id="petPurchaseEmpty" hidden>구매 이력이 없습니다. (과거 판매 데이터는 반려동물과 연결돼 있지 않습니다)</p>
+              </section>
               <p class="form-message" id="petVisitFormMessage"></p>
             </section>
           </section>
@@ -229,6 +229,6 @@
       <p class="form-message" id="newPetFormMessage"></p>
     </dialog>
     <script src="config.js"></script>
-    <script src="app.js?v=20261110b"></script>
+    <script src="app.js?v=20261110c"></script>
   </body>
 </html>
