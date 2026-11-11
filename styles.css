@@ -149,14 +149,28 @@ html[data-theme="dark"] .legacy-sales-table tr.legacy-sales-total-row{background
 html[data-theme="dark"] .legacy-sales-view-tabs button{background:#111c2e;border-color:#40516d;color:var(--ink)}
 .legacy-sales-table tr.is-diff-up td:last-child{color:#1f9254;font-weight:700}.legacy-sales-table tr.is-diff-down td:last-child{color:#d6336c;font-weight:700}
 .bar-chart.weather-mode{display:block;height:auto;padding:4px 0 0}
-.weather-effect-grid{margin-top:18px;margin-bottom:0}.weather-effect-grid .summary-card{padding:14px}.weather-effect-grid .summary-card p{margin:0 0 8px;font-size:12px}.weather-effect-grid .summary-card strong{font-size:18px}
 .weather-calendar{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px}
 .weather-cal-head{padding:2px 0 6px;color:var(--muted);font-size:11px;font-weight:700;text-align:center}.weather-cal-head.sun{color:#d6336c}.weather-cal-head.sat{color:#2f6fed}
 .weather-cal-empty{visibility:hidden}
 .weather-day.is-holiday{border-color:#e8a0b4;background:#fdf1f5}.weather-day.is-closed{border-color:var(--line);background:var(--paper);opacity:.72}
 .weather-closed-tag{color:#d6336c!important;font-weight:800}
-.weather-effect-grid .kpi-delta{font-weight:800}
-.weather-weekday-note{margin:10px 2px 0;color:var(--muted);font-size:11px}
+.sales-trend-chart{margin-top:20px;padding-top:18px;border-top:1px solid var(--line)}
+.sales-trend-chart svg{width:100%;height:auto;display:block}
+.trend-grid{stroke:var(--line);stroke-width:1}
+.trend-axis-label{fill:var(--muted);font-size:10px;font-variant-numeric:tabular-nums}
+.trend-today-line{stroke:var(--muted);stroke-width:1;stroke-dasharray:3 3}
+.trend-today-label{fill:var(--muted);font-size:10px;font-weight:700}
+.trend-band{fill:rgba(47,111,237,.14);stroke:none}
+.trend-line-actual{fill:none;stroke:var(--blue);stroke-width:2.25}
+.trend-line-predicted{fill:none;stroke:#7a93c4;stroke-width:2;stroke-dasharray:5 4}
+.trend-closed-dot{fill:var(--muted)}
+.trend-legend{display:flex;flex-wrap:wrap;gap:16px;margin-top:10px;color:var(--muted);font-size:12px}
+.trend-legend span{display:flex;align-items:center;gap:6px}
+.trend-swatch{display:inline-block;width:16px;height:3px;border-radius:2px;background:var(--blue)}
+.trend-swatch.predicted{background:repeating-linear-gradient(90deg,#7a93c4 0 4px,transparent 4px 7px)}
+.trend-swatch.band{width:12px;height:10px;border-radius:3px;background:rgba(47,111,237,.25)}
+.trend-swatch.closed{width:7px;height:7px;border-radius:50%;background:var(--muted)}
+html[data-theme="dark"] .trend-line-predicted{stroke:#aebfe6}
 html[data-theme="dark"] .weather-day.is-holiday{background:#2a1c26}html[data-theme="dark"] .weather-day.is-closed{background:#15202f}
 .legacy-sales-toolbar{grid-template-columns:200px minmax(220px,420px);gap:14px;max-width:700px;margin:18px 0 12px}.legacy-sales-toolbar label{display:block;margin:0 0 6px;color:#445066;font-size:13px;font-weight:700}.legacy-sales-toolbar label span{color:var(--muted);font-weight:400}.legacy-sales-toolbar select,.legacy-sales-toolbar input{width:100%;height:42px;padding:0 10px;border:1px solid #d9e0ea;border-radius:8px;background:#fff;color:var(--ink);font:inherit}.legacy-sales-toolbar select:focus,.legacy-sales-toolbar input:focus{outline:3px solid rgba(47,111,237,.15);border-color:var(--blue)}
 @media(max-width:560px){.legacy-sales-toolbar{grid-template-columns:1fr}}

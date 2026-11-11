@@ -938,6 +938,7 @@ function buildWeatherModel() {
   weatherModelCache = {
     beta, builder, allDays, trainRows, r2, pearsonTemp, pearsonPrecip, pearsonPop,
     popN: popPairs.length, minDateObj, popModel, hasPop: !!popModel,
+    rmse: Math.sqrt(ssRes / y.length),
   };
   return weatherModelCache;
 }
@@ -983,10 +984,11 @@ function forecastWeatherSales(model) {
       cursor.setDate(cursor.getDate() + 1);
     }
   }
-  return weatherForecastCache.map((f) => {
+  const forecast = weatherForecastCache.map((f) => {
     const entry = pushDay(f.date, Number(f.temp), Number(f.precip), f.weatherCode);
     return { ...entry, tempMax: Number(f.tempMax), tempMin: Number(f.tempMin) };
   });
+  return { forecast, extended: allDays };
 }
 
 // 일~토 달력 모양으로 배열: 첫 예보일의 요일만큼 앞을 비우고 시작한다
@@ -1005,6 +1007,79 @@ function renderWeatherCalendar(forecast) {
   const trailing = total % 7 ? 7 - (total % 7) : 0;
   const trailingCells = Array.from({ length: trailing }, () => '<div class="weather-cal-empty"></div>').join('');
   return `<div class="weather-calendar">${headCells}${emptyCells}${dayCells}${trailingCells}</div>`;
+}
+
+function wonShort(v) {
+  const n = Math.round(v);
+  if (Math.abs(n) >= 10000) return `${(n / 10000).toLocaleString('ko-KR', { maximumFractionDigits: 1 })}만원`;
+  return `${n.toLocaleString('ko-KR')}원`;
+}
+
+// 실적(실선)과 예측(점선+위아래 확률대)을 한 그래프로 이어 그린다. 예측은 확정이 아니라서
+// 지평선(며칠 뒤인지)이 멀어질수록 불확실 범위가 넓어지게(√기간 비례) 표현한다.
+function renderSalesTrendChart(extended, model) {
+  const actualEnd = model.allDays.length; // 이 인덱스 전까지가 실제 영업 기록
+  const historyDays = 30;
+  const historyStart = Math.max(0, actualEnd - historyDays);
+  const series = extended.slice(historyStart);
+  const points = series.map((d, i) => {
+    const globalIndex = historyStart + i;
+    const isPredicted = globalIndex >= actualEnd;
+    const horizon = isPredicted ? globalIndex - actualEnd + 1 : 0;
+    const band = isPredicted && !d.closed ? model.rmse * Math.sqrt(horizon) : 0;
+    return {
+      date: d.date, amount: d.amount, closed: d.closed, isPredicted,
+      upper: Math.max(0, d.amount + band), lower: Math.max(0, d.amount - band),
+    };
+  });
+
+  const W = 820, H = 260, padL = 60, padR = 14, padT = 16, padB = 30;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const yMax = Math.max(...points.map((p) => p.upper), 10000) * 1.1;
+  const x = (i) => padL + (i * plotW) / Math.max(points.length - 1, 1);
+  const y = (v) => padT + plotH - (Math.min(v, yMax) / yMax) * plotH;
+
+  const gridLines = [0, 0.25, 0.5, 0.75, 1].map((f) => {
+    const v = yMax * f;
+    return `<line x1="${padL}" y1="${y(v).toFixed(1)}" x2="${W - padR}" y2="${y(v).toFixed(1)}" class="trend-grid" />
+      <text x="${padL - 8}" y="${(y(v) + 4).toFixed(1)}" class="trend-axis-label" text-anchor="end">${wonShort(v)}</text>`;
+  }).join('');
+
+  const actualPts = points.filter((p) => !p.isPredicted);
+  const seamIndex = actualPts.length - 1;
+  const predictedPts = points.slice(seamIndex); // 실적 마지막 점부터 이어서 그려 끊기지 않게 함
+
+  const pathFor = (pts, offset, key) => pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${x(offset + i).toFixed(1)} ${y(p[key]).toFixed(1)}`).join(' ');
+  const actualPath = pathFor(actualPts, 0, 'amount');
+  const predictedPath = pathFor(predictedPts, seamIndex, 'amount');
+  const upperPath = predictedPts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${x(seamIndex + i).toFixed(1)} ${y(p.upper).toFixed(1)}`).join(' ');
+  const lowerPathRev = predictedPts.slice().reverse().map((p, i) => `L ${x(seamIndex + (predictedPts.length - 1 - i)).toFixed(1)} ${y(p.lower).toFixed(1)}`).join(' ');
+  const bandPath = `${upperPath} ${lowerPathRev} Z`;
+
+  const closedDots = points.map((p, i) => p.closed ? `<circle cx="${x(i).toFixed(1)}" cy="${y(0).toFixed(1)}" r="2.5" class="trend-closed-dot" />` : '').join('');
+  const labelEvery = Math.ceil(points.length / 8);
+  const xLabels = points.map((p, i) => (i % labelEvery === 0 || i === points.length - 1)
+    ? `<text x="${x(i).toFixed(1)}" y="${H - 8}" class="trend-axis-label" text-anchor="middle">${Number(p.date.slice(5, 7))}/${Number(p.date.slice(8, 10))}</text>` : '').join('');
+  const todayX = x(seamIndex).toFixed(1);
+
+  return `<div class="sales-trend-chart">
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="실적과 예측 매출 추이">
+      ${gridLines}
+      <line x1="${todayX}" y1="${padT}" x2="${todayX}" y2="${padT + plotH}" class="trend-today-line" />
+      <text x="${todayX}" y="${padT - 4}" class="trend-today-label" text-anchor="middle">실적 → 예측</text>
+      <path d="${bandPath}" class="trend-band" />
+      <path d="${actualPath}" class="trend-line-actual" />
+      <path d="${predictedPath}" class="trend-line-predicted" />
+      ${closedDots}
+      ${xLabels}
+    </svg>
+    <div class="trend-legend">
+      <span><i class="trend-swatch actual"></i>실적</span>
+      <span><i class="trend-swatch predicted"></i>예측(점선)</span>
+      <span><i class="trend-swatch band"></i>예측 불확실 범위</span>
+      <span><i class="trend-swatch closed"></i>휴무일</span>
+    </div>
+  </div>`;
 }
 
 function renderWeatherView() {
@@ -1028,21 +1103,10 @@ function renderWeatherView() {
     legacySalesMonthSummary.hidden = true;
     return;
   }
-  const forecast = forecastWeatherSales(model);
+  const { forecast, extended } = forecastWeatherSales(model);
 
   legacySalesChart.classList.add('weather-mode');
-  const b = model.beta, idx = model.builder.index;
-  const effectCards = [
-    { label: '기온 1°C당 효과', value: b[idx.temp] },
-    { label: '강수 1mm당 효과', value: b[idx.precip] },
-    { label: '진드기 예방 성수기 효과(4~7월)', value: b[idx.tick] },
-    model.hasPop ? { label: '생활인구 1천명당 효과', value: b[idx.pop] } : null,
-    { label: '전주 동요일 매출 1만원당', value: b[idx.lag7] },
-    { label: '최근 7일 평균매출 1만원당', value: b[idx.roll7] },
-    { label: '계절성 진폭(연중 최대 변동)', value: Math.sqrt(b[idx.sin] ** 2 + b[idx.cos] ** 2) },
-  ].filter(Boolean).map((c) => `<article class="summary-card"><p>${c.label}</p><strong class="${c.value >= 0 ? 'kpi-delta up' : 'kpi-delta down'}">${c.value >= 0 ? '+' : ''}${won(c.value)}</strong></article>`).join('');
-  const weekdayNote = `토요일 기준 · 월 ${won(b[idx.mon])} · 화 ${won(b[idx.tue])} · 수 ${won(b[idx.wed])} · 목 ${won(b[idx.thu])} · 금 ${won(b[idx.fri])}`;
-  legacySalesChart.innerHTML = `${renderWeatherCalendar(forecast)}<div class="summary-grid weather-effect-grid">${effectCards}</div><p class="weather-weekday-note">요일별 효과(매출액 기준, 모델 계수) · ${weekdayNote}</p>`;
+  legacySalesChart.innerHTML = `${renderWeatherCalendar(forecast)}${renderSalesTrendChart(extended, model)}`;
 
   setTableHead(['일자', '요일', '예상기온', '예상강수', '추정인구', '공휴일', '예측 매출액'], 6);
   setRows(forecast.map((f) => ({
