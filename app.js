@@ -530,6 +530,7 @@ function shiftMonth(month, offset) {
 }
 
 function setBarChart(items) {
+  legacySalesChart.classList.remove('weather-mode');
   const max = Math.max(...items.map((d) => Math.abs(d.amount)), 1);
   legacySalesChart.replaceChildren(...items.map(({ label, amount, title, cls }) => {
     const item = document.createElement('div');
@@ -549,7 +550,7 @@ const LEGACY_SALES_COL_WIDTH = {
   '일자': 95, '요일': 68, '수량': 72, '단가': 96, '금액': 110, '마진율': 76,
   '건수': 72, '비중': 68, '평균마진율': 94, '거래건수': 86, '전월대비': 86,
   '전년동월대비': 104, '건당 평균금액': 104, '매출액': 110,
-  '예상기온': 90, '예상강수': 90, '공휴일': 90, '예측 매출액': 120,
+  '예상기온': 90, '예상강수': 90, '공휴일': 90, '예측 매출액': 120, '추정인구': 100,
 };
 
 function setTableHead(labels, wideIndex) {
@@ -650,14 +651,14 @@ function renderWeekdayView(rows) {
     buckets[idx].count += 1;
   });
   setBarChart(buckets.map((b) => ({ label: b.label, amount: b.amount, cls: b.idx === 0 || b.idx === 6 ? 'weekend' : '', title: `${b.label}요일 · ${won(b.amount)}` })));
-  setTableHead(['요일', '거래건수', '수량', '매출액', '건당 평균금액'], -1);
+  setTableHead(['요일', '거래건수', '수량', '매출액', '건당 평균금액'], 3);
   const totalAmount = buckets.reduce((sum, b) => sum + b.amount, 0);
   const totalQty = buckets.reduce((sum, b) => sum + b.qty, 0);
   const totalCount = buckets.reduce((sum, b) => sum + b.count, 0);
   setRows(buckets.map((b) => ({
     cls: b.idx === 0 || b.idx === 6 ? 'is-weekend' : '',
     cells: [`${b.label}요일`, `${b.count.toLocaleString('ko-KR')}건`, b.qty.toLocaleString('ko-KR'), won(b.amount), b.count ? won(Math.round(b.amount / b.count)) : '—'],
-  })), -1, ['합계', `${totalCount.toLocaleString('ko-KR')}건`, totalQty.toLocaleString('ko-KR'), won(totalAmount), totalCount ? won(Math.round(totalAmount / totalCount)) : '—']);
+  })), 3, ['합계', `${totalCount.toLocaleString('ko-KR')}건`, totalQty.toLocaleString('ko-KR'), won(totalAmount), totalCount ? won(Math.round(totalAmount / totalCount)) : '—']);
 }
 
 function renderMarginView(rows) {
@@ -692,12 +693,12 @@ function renderRecent3mView() {
   const months = [shiftMonth(selectedLegacySalesMonth, -2), shiftMonth(selectedLegacySalesMonth, -1), selectedLegacySalesMonth];
   const totals = months.map(monthTotals);
   setBarChart(totals.map((t) => ({ label: monthLabel(t.month).replace('년 ', '.').replace('월', ''), amount: t.amount, title: `${monthLabel(t.month)} · ${won(t.amount)}` })));
-  setTableHead(['월', '거래건수', '수량', '매출액', '전월대비'], -1);
+  setTableHead(['월', '거래건수', '수량', '매출액', '전월대비'], 3);
   setRows(totals.map((t, i) => {
     const prev = i > 0 ? totals[i - 1].amount : null;
     const diff = prev != null && prev > 0 ? ((t.amount - prev) / prev) * 100 : null;
     return { cls: diff != null && diff > 0 ? 'is-diff-up' : diff != null && diff < 0 ? 'is-diff-down' : '', cells: [monthLabel(t.month), `${t.count.toLocaleString('ko-KR')}건`, t.qty.toLocaleString('ko-KR'), won(t.amount), diff == null ? '—' : `${diff > 0 ? '+' : ''}${diff.toFixed(1)}%`] };
-  }), -1, null);
+  }), 3, null);
 }
 
 function renderYoyView() {
@@ -707,12 +708,12 @@ function renderYoyView() {
     { label: monthLabel(lastYear.month), amount: lastYear.amount, title: `${monthLabel(lastYear.month)} · ${won(lastYear.amount)}` },
     { label: monthLabel(thisMonth.month), amount: thisMonth.amount, title: `${monthLabel(thisMonth.month)} · ${won(thisMonth.amount)}` },
   ]);
-  setTableHead(['월', '거래건수', '수량', '매출액', '전년동월대비'], -1);
+  setTableHead(['월', '거래건수', '수량', '매출액', '전년동월대비'], 3);
   const diff = lastYear.amount > 0 ? ((thisMonth.amount - lastYear.amount) / lastYear.amount) * 100 : null;
   setRows([
     { cells: [monthLabel(lastYear.month), `${lastYear.count.toLocaleString('ko-KR')}건`, lastYear.qty.toLocaleString('ko-KR'), won(lastYear.amount), '—'] },
     { cls: diff != null && diff > 0 ? 'is-diff-up' : diff != null && diff < 0 ? 'is-diff-down' : '', cells: [monthLabel(thisMonth.month), `${thisMonth.count.toLocaleString('ko-KR')}건`, thisMonth.qty.toLocaleString('ko-KR'), won(thisMonth.amount), diff == null ? '데이터 없음' : `${diff > 0 ? '+' : ''}${diff.toFixed(1)}%`] },
-  ], -1, null);
+  ], 3, null);
 }
 
 // ---------- 날씨·생활인구 상관분석 및 향후 2주 매출 예측 ----------
@@ -742,12 +743,15 @@ async function ensureWeatherPopData() {
 async function fetchForecastWeather() {
   const query = new URLSearchParams({
     latitude: '37.5486', longitude: '127.1248', timezone: 'Asia/Seoul', forecast_days: '14',
-    daily: 'temperature_2m_mean,precipitation_sum',
+    daily: 'weather_code,temperature_2m_mean,temperature_2m_max,temperature_2m_min,precipitation_sum',
   });
   const response = await fetch(`https://api.open-meteo.com/v1/forecast?${query}`);
   if (!response.ok) throw new Error('예보를 불러오지 못했습니다.');
   const { daily } = await response.json();
-  return daily.time.map((date, i) => ({ date, temp: daily.temperature_2m_mean[i], precip: daily.precipitation_sum[i] }));
+  return daily.time.map((date, i) => ({
+    date, weatherCode: daily.weather_code[i], temp: daily.temperature_2m_mean[i],
+    tempMax: daily.temperature_2m_max[i], tempMin: daily.temperature_2m_min[i], precip: daily.precipitation_sum[i],
+  }));
 }
 
 async function ensureForecastWeather() {
@@ -806,14 +810,42 @@ function fitOLS(X, y) {
   return solveLinear(XtX, Xty);
 }
 
-// 요일·명절·기온·강수·추세(날짜 순번)로 일별 매출을 설명하는 경량 회귀 모델.
-// 생활인구는 과거 약 6개월치만 있어 예측에는 못 쓰고, 참고용 상관계수만 별도로 낸다.
+// 요일·명절·기온·강수로 생활인구를 추정하는 보조 모델. 실측 생활인구가 있는 기간(약 6개월)으로
+// 학습해, 그 패턴을 전체 매출 학습 기간과 미래 예보일에도 적용할 수 있게 한다.
+let populationModelCache;
+function buildPopulationModel() {
+  if (populationModelCache !== undefined) return populationModelCache;
+  const weatherByDate = new Map(environmentalWeather.map((w) => [w.date, w]));
+  const rows = dongPopulationDaily.map((p) => {
+    const w = weatherByDate.get(p.measured_on);
+    if (!w || w.temp_mean == null) return null;
+    const meta = dateMeta(p.measured_on);
+    return {
+      pop: Number(p.business_hours_avg), temp: Number(w.temp_mean), precip: Number(w.precipitation_mm || 0),
+      isWeekend: meta.isWeekend ? 1 : 0, isHoliday: meta.holiday ? 1 : 0,
+    };
+  }).filter(Boolean);
+  if (rows.length < 20) { populationModelCache = null; return null; }
+  const beta = fitOLS(rows.map((r) => [1, r.isWeekend, r.isHoliday, r.temp, r.precip]), rows.map((r) => r.pop));
+  populationModelCache = beta ? { beta, n: rows.length } : null;
+  return populationModelCache;
+}
+
+function estimatePopulation(popModel, meta, temp, precip) {
+  return popModel ? dot([1, meta.isWeekend ? 1 : 0, meta.holiday ? 1 : 0, temp, precip], popModel.beta) : null;
+}
+
+// 요일·명절·기온·강수·추정 생활인구·추세(날짜 순번)로 일별 매출을 설명하는 경량 회귀 모델.
+// 생활인구는 실측치가 있는 날은 실측값을, 그 밖의 날(과거 대부분·미래 예보일)은 위 보조 모델의
+// 추정값을 써서 전체 학습 기간에 빠짐없이 변수로 넣는다.
 function buildWeatherModel() {
   if (weatherModelCache) return weatherModelCache;
   if (!legacySales.length || !environmentalWeather.length) return null;
+  const popModel = buildPopulationModel();
   const salesByDate = new Map();
   legacySales.forEach((row) => salesByDate.set(row.sold_on, (salesByDate.get(row.sold_on) || 0) + Number(row.amount || 0)));
   const weatherByDate = new Map(environmentalWeather.map((w) => [w.date, w]));
+  const popByDate = new Map(dongPopulationDaily.map((p) => [p.measured_on, Number(p.business_hours_avg)]));
   const salesDates = [...salesByDate.keys()].sort();
   const minDateObj = new Date(`${salesDates[0]}T00:00:00`);
   const maxDateObj = new Date(`${salesDates.at(-1)}T00:00:00`);
@@ -823,18 +855,19 @@ function buildWeatherModel() {
     const w = weatherByDate.get(dateText);
     if (!w || w.temp_mean == null) continue;
     const meta = dateMeta(dateText);
+    const temp = Number(w.temp_mean), precip = Number(w.precipitation_mm || 0);
+    const pop = popByDate.has(dateText) ? popByDate.get(dateText) : estimatePopulation(popModel, meta, temp, precip);
     days.push({
-      date: dateText,
-      amount: salesByDate.get(dateText) || 0,
-      temp: Number(w.temp_mean),
-      precip: Number(w.precipitation_mm || 0),
-      isWeekend: meta.isWeekend ? 1 : 0,
-      isHoliday: meta.holiday ? 1 : 0,
-      trend: Math.round((d - minDateObj) / 86400000),
+      date: dateText, amount: salesByDate.get(dateText) || 0, temp, precip,
+      isWeekend: meta.isWeekend ? 1 : 0, isHoliday: meta.holiday ? 1 : 0,
+      trend: Math.round((d - minDateObj) / 86400000), pop,
     });
   }
   if (days.length < 30) return null;
-  const X = days.map((d) => [1, d.isWeekend, d.isHoliday, d.temp, d.precip, d.trend]);
+  const featureRow = (d) => popModel
+    ? [1, d.isWeekend, d.isHoliday, d.temp, d.precip, d.trend, d.pop / 1000]
+    : [1, d.isWeekend, d.isHoliday, d.temp, d.precip, d.trend];
+  const X = days.map(featureRow);
   const y = days.map((d) => d.amount);
   const beta = fitOLS(X, y);
   if (!beta) return null;
@@ -845,18 +878,21 @@ function buildWeatherModel() {
   const r2 = ssTot > 0 ? 1 - ssRes / ssTot : null;
   const pearsonTemp = pearson(days.map((d) => d.temp), y);
   const pearsonPrecip = pearson(days.map((d) => d.precip), y);
-  const popByDate = new Map(dongPopulationDaily.map((p) => [p.measured_on, Number(p.business_hours_avg)]));
-  const popPairs = days.filter((d) => popByDate.has(d.date)).map((d) => ({ pop: popByDate.get(d.date), amount: d.amount }));
-  const pearsonPop = popPairs.length >= 10 ? pearson(popPairs.map((p) => p.pop), popPairs.map((p) => p.amount)) : null;
-  weatherModelCache = { beta, days, r2, pearsonTemp, pearsonPrecip, pearsonPop, popN: popPairs.length, minDateObj };
+  const popPairs = days.filter((d) => popByDate.has(d.date));
+  const pearsonPop = popPairs.length >= 10 ? pearson(popPairs.map((d) => d.pop), popPairs.map((d) => d.amount)) : null;
+  weatherModelCache = {
+    beta, days, r2, pearsonTemp, pearsonPrecip, pearsonPop, popN: popPairs.length, minDateObj, popModel,
+    hasPop: !!popModel,
+  };
   return weatherModelCache;
 }
 
 function renderWeatherView() {
   if (!weatherPopLoaded || !weatherForecastCache) {
-    setBarChart([]);
+    legacySalesChart.classList.add('weather-mode');
+    legacySalesChart.innerHTML = '<p class="weather-empty">날씨·생활인구 데이터와 예보를 불러오는 중입니다...</p>';
     setTableHead(['안내'], 0);
-    setRows([{ cells: ['날씨·생활인구 데이터와 예보를 불러오는 중입니다...'] }], 0, null);
+    setRows([{ cells: ['불러오는 중...'] }], 0, null);
     legacySalesMonthSummary.hidden = true;
     ensureWeatherPopData().then(() => ensureForecastWeather()).then(() => {
       if (legacySalesView === 'weather') renderLegacySales();
@@ -865,34 +901,64 @@ function renderWeatherView() {
   }
   const model = buildWeatherModel();
   if (!model) {
-    setBarChart([]);
+    legacySalesChart.classList.add('weather-mode');
+    legacySalesChart.innerHTML = '<p class="weather-empty">학습에 쓸 수 있는 매출·날씨 데이터가 30일 이상 겹치지 않습니다.</p>';
     setTableHead(['안내'], 0);
-    setRows([{ cells: ['학습에 쓸 수 있는 매출·날씨 데이터가 30일 이상 겹치지 않습니다.'] }], 0, null);
+    setRows([{ cells: ['데이터 부족'] }], 0, null);
     legacySalesMonthSummary.hidden = true;
     return;
   }
+  const popModel = model.popModel;
   const forecast = weatherForecastCache.map((f) => {
     const meta = dateMeta(f.date);
+    const temp = Number(f.temp), precip = Number(f.precip);
     const trend = Math.round((new Date(`${f.date}T00:00:00`) - model.minDateObj) / 86400000);
-    const feat = [1, meta.isWeekend ? 1 : 0, meta.holiday ? 1 : 0, Number(f.temp), Number(f.precip), trend];
-    return { date: f.date, meta, temp: Number(f.temp), precip: Number(f.precip), predicted: Math.max(0, dot(feat, model.beta)) };
+    const pop = estimatePopulation(popModel, meta, temp, precip);
+    const feat = popModel ? [1, meta.isWeekend ? 1 : 0, meta.holiday ? 1 : 0, temp, precip, trend, pop / 1000]
+      : [1, meta.isWeekend ? 1 : 0, meta.holiday ? 1 : 0, temp, precip, trend];
+    return {
+      date: f.date, meta, temp, precip, pop, weatherCode: f.weatherCode,
+      tempMax: Number(f.tempMax), tempMin: Number(f.tempMin),
+      predicted: Math.max(0, dot(feat, model.beta)),
+    };
   });
-  setBarChart(forecast.map((f) => ({
-    label: String(Number(f.date.slice(8, 10))), amount: f.predicted,
-    cls: f.meta.holiday ? 'holiday' : f.meta.isWeekend ? 'weekend' : '',
-    title: `${f.date} (${f.meta.weekday})${f.meta.holiday ? ' · ' + f.meta.holiday : ''} · 예측 ${won(f.predicted)} · ${f.temp.toFixed(1)}°C · 강수 ${f.precip.toFixed(1)}mm`,
-  })));
-  setTableHead(['일자', '요일', '예상기온', '예상강수', '공휴일', '예측 매출액'], -1);
+
+  // 상단: 스마트폰 날씨앱 스타일 일별 예보 카드
+  legacySalesChart.classList.add('weather-mode');
+  const dayCards = forecast.map((f) => `<article class="weather-day forecast${f.meta.holiday ? ' is-holiday' : f.meta.isWeekend ? ' is-weekend' : ''}">
+    <span class="weather-icon">${weatherIcon(f.weatherCode, f.precip)}</span>
+    <strong>${Number(f.date.slice(5, 7))}/${Number(f.date.slice(8, 10))} (${f.meta.weekday})</strong>
+    <span>${f.tempMin.toFixed(0)}° / ${f.tempMax.toFixed(0)}°</span>
+    <small>${f.precip > 0 ? `비 ${f.precip.toFixed(1)}mm` : '강수 없음'}</small>
+    <small>${won(f.predicted)}</small>
+  </article>`).join('');
+  const b = model.beta;
+  const effectCards = [
+    { label: '평일 대비 주말 효과', value: b[1] },
+    { label: '명절 효과', value: b[2] },
+    { label: '기온 1°C당 효과', value: b[3] },
+    { label: '강수 1mm당 효과', value: b[4] },
+    model.hasPop ? { label: '생활인구 1천명당 효과', value: b[6] } : null,
+    { label: '장기 추세(1일당)', value: b[5] },
+  ].filter(Boolean).map((c) => `<article class="summary-card"><p>${c.label}</p><strong class="${c.value >= 0 ? 'kpi-delta up' : 'kpi-delta down'}">${c.value >= 0 ? '+' : ''}${won(c.value)}</strong></article>`).join('');
+  legacySalesChart.innerHTML = `<div class="weather-days">${dayCards}</div><div class="summary-grid weather-effect-grid">${effectCards}</div>`;
+
+  setTableHead(['일자', '요일', '예상기온', '예상강수', '추정인구', '공휴일', '예측 매출액'], 6);
   setRows(forecast.map((f) => ({
     cls: f.meta.holiday ? 'is-holiday' : f.meta.isWeekend ? 'is-weekend' : '',
-    cells: [f.date, f.meta.weekday, `${f.temp.toFixed(1)}°C`, `${f.precip.toFixed(1)}mm`, f.meta.holiday || '—', won(f.predicted)],
-  })), -1, null);
+    cells: [
+      f.date, f.meta.weekday, `${f.temp.toFixed(1)}°C`, `${f.precip.toFixed(1)}mm`,
+      f.pop == null ? '—' : `${Math.round(f.pop).toLocaleString('ko-KR')}명`,
+      f.meta.holiday || '—', won(f.predicted),
+    ],
+  })), 6, null);
+
   legacySalesMonthSummary.hidden = false;
   const r2Text = model.r2 == null ? 'R² 산출 불가' : `설명력 R²=${model.r2.toFixed(2)}`;
   const tempText = model.pearsonTemp == null ? '' : ` · 기온 상관 r=${model.pearsonTemp.toFixed(2)}`;
   const precipText = model.pearsonPrecip == null ? '' : ` · 강수 상관 r=${model.pearsonPrecip.toFixed(2)}`;
-  const popText = model.pearsonPop == null ? ' · 생활인구 상관: 겹치는 기간 부족' : ` · 생활인구 상관 r=${model.pearsonPop.toFixed(2)} (겹치는 ${model.popN}일 기준, 예측에는 미반영)`;
-  legacySalesMonthSummary.textContent = `학습 데이터 ${model.days.length}일(요일·명절·기온·강수 기반 회귀) · ${r2Text}${tempText}${precipText}${popText}`;
+  const popText = model.pearsonPop == null ? ' · 생활인구 상관: 겹치는 기간 부족' : ` · 생활인구 상관 r=${model.pearsonPop.toFixed(2)} (실측 겹치는 ${model.popN}일 기준)`;
+  legacySalesMonthSummary.textContent = `학습 데이터 ${model.days.length}일(요일·명절·기온·강수·추정 생활인구 기반 회귀) · ${r2Text}${tempText}${precipText}${popText}`;
 }
 
 const legacySalesViewConfig = {
