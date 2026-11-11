@@ -2134,7 +2134,7 @@ function renderPetDetail(detail, visits, purchases = []) {
 }
 
 function renderPurchaseProductOptions(keyword = '') {
-  const candidates = products.filter((product) => product.track_stock && matchesProduct(product, keyword)).slice(0, 20);
+  const candidates = products.filter((product) => matchesProduct(product, keyword)).slice(0, 20);
   purchaseProductOptions.replaceChildren(...candidates.map((product) => {
     const option = document.createElement('option');
     option.value = product.name;
@@ -2146,7 +2146,7 @@ function renderPurchaseProductOptions(keyword = '') {
 function findPurchaseProduct() {
   const entered = purchaseProductSearch.value.trim().toLowerCase();
   if (!entered) return null;
-  return products.find((product) => product.track_stock && (product.name.toLowerCase() === entered || product.code.toLowerCase() === entered)) || null;
+  return products.find((product) => product.name.toLowerCase() === entered || product.code.toLowerCase() === entered) || null;
 }
 
 function renderPurchase() {
