@@ -844,8 +844,16 @@ function estimatePopulation(popModel, meta, temp, precip) {
 // · 전주 동요일 매출(lag7) · 최근7일 평균매출(roll7) 로 구성한 특징 벡터 빌더.
 // 일요일·공휴일은 영업을 안 해 매출이 사실상 0으로 수렴하므로(실데이터로 확인) 회귀 대상에서 아예
 // 뺀다 — "추정"이 필요한 변동이 아니라 영업 규칙이기 때문.
+// 넥스가드·프론트라인·브라벡토(진드기 예방약) 실매출을 월별로 뽑아보면 4~7월이 다른 달보다
+// 뚜렷이 높다(예: 5월 250만원 대 1월 31만원). 반려동물 종합백신(리컴비텍)은 4월에만 반짝 올라
+// 진드기 성수기와 시기가 거의 겹쳐서, 별도 변수로 쪼개봐야 다중공선성만 생기고 얻는 정보가 없다
+// — 그래서 "진드기 예방 성수기" 하나로 합쳐서 반영한다.
+function isTickSeason(month) {
+  return month >= 4 && month <= 7;
+}
+
 function makeFeatureBuilder(hasPop) {
-  const names = ['intercept', 'mon', 'tue', 'wed', 'thu', 'fri', 'temp', 'precip'];
+  const names = ['intercept', 'mon', 'tue', 'wed', 'thu', 'fri', 'temp', 'precip', 'tick'];
   if (hasPop) names.push('pop');
   names.push('trend', 'sin', 'cos', 'lag7', 'roll7');
   const index = Object.fromEntries(names.map((n, i) => [n, i]));
@@ -859,6 +867,7 @@ function makeFeatureBuilder(hasPop) {
     if (ctx.dow === 5) row[index.fri] = 1;
     row[index.temp] = ctx.temp;
     row[index.precip] = ctx.precip;
+    row[index.tick] = ctx.tick ? 1 : 0;
     if (hasPop) row[index.pop] = (ctx.pop || 0) / 1000;
     row[index.trend] = ctx.trend;
     row[index.sin] = ctx.sinDoy;
@@ -899,7 +908,7 @@ function buildWeatherModel() {
     const doy = dayOfYear(d);
     allDays.push({
       date: dateText, amount: salesByDate.get(dateText) || 0, temp, precip, pop,
-      dow: meta.dow, closed: isClosedDay(meta),
+      dow: meta.dow, closed: isClosedDay(meta), tick: isTickSeason(d.getMonth() + 1),
       trend: Math.round((d - minDateObj) / 86400000),
       sinDoy: Math.sin((2 * Math.PI * doy) / 365.25), cosDoy: Math.cos((2 * Math.PI * doy) / 365.25),
     });
@@ -952,7 +961,7 @@ function forecastWeatherSales(model) {
       const roll7 = allDays.slice(i - 7, i).reduce((s, x) => s + x.amount, 0) / 7;
       const trend = Math.round((new Date(`${dateText}T00:00:00`) - model.minDateObj) / 86400000);
       const row = model.builder.build({
-        dow: meta.dow, temp, precip, pop, trend,
+        dow: meta.dow, temp, precip, pop, trend, tick: isTickSeason(new Date(`${dateText}T00:00:00`).getMonth() + 1),
         sinDoy: Math.sin((2 * Math.PI * doy) / 365.25), cosDoy: Math.cos((2 * Math.PI * doy) / 365.25),
         lag7, roll7,
       });
@@ -1026,6 +1035,7 @@ function renderWeatherView() {
   const effectCards = [
     { label: '기온 1°C당 효과', value: b[idx.temp] },
     { label: '강수 1mm당 효과', value: b[idx.precip] },
+    { label: '진드기 예방 성수기 효과(4~7월)', value: b[idx.tick] },
     model.hasPop ? { label: '생활인구 1천명당 효과', value: b[idx.pop] } : null,
     { label: '전주 동요일 매출 1만원당', value: b[idx.lag7] },
     { label: '최근 7일 평균매출 1만원당', value: b[idx.roll7] },
@@ -1049,7 +1059,7 @@ function renderWeatherView() {
   const tempText = model.pearsonTemp == null ? '' : ` · 기온 상관 r=${model.pearsonTemp.toFixed(2)}`;
   const precipText = model.pearsonPrecip == null ? '' : ` · 강수 상관 r=${model.pearsonPrecip.toFixed(2)}`;
   const popText = model.pearsonPop == null ? ' · 생활인구 상관: 겹치는 기간 부족' : ` · 생활인구 상관 r=${model.pearsonPop.toFixed(2)} (실측 겹치는 ${model.popN}일 기준)`;
-  legacySalesMonthSummary.textContent = `영업일 ${model.trainRows.length}일 학습(일요일·공휴일 휴무 제외, 요일·기온·강수·생활인구·계절성·전주매출·최근7일평균 기반 회귀) · ${r2Text}${tempText}${precipText}${popText}`;
+  legacySalesMonthSummary.textContent = `영업일 ${model.trainRows.length}일 학습(일요일·공휴일 휴무 제외, 요일·기온·강수·진드기 성수기·생활인구·계절성·전주매출·최근7일평균 기반 회귀) · ${r2Text}${tempText}${precipText}${popText}`;
 }
 
 const legacySalesViewConfig = {
