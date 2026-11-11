@@ -111,7 +111,9 @@ async function updateSalePetHistory() {
 const purchaseSupplier = document.querySelector('#purchaseSupplier');
 const purchaseDate = document.querySelector('#purchaseDate');
 const purchaseProductSearch = document.querySelector('#purchaseProductSearch');
-const purchaseProductOptions = document.querySelector('#purchaseProductOptions');
+const purchaseProductValue = document.querySelector('#purchaseProductValue');
+const purchaseProductSuggestions = document.querySelector('#purchaseProductSuggestions');
+const purchaseProductHint = document.querySelector('#purchaseProductHint');
 const purchaseQuantity = document.querySelector('#purchaseQuantity');
 const purchaseUnitCost = document.querySelector('#purchaseUnitCost');
 const purchaseLotNo = document.querySelector('#purchaseLotNo');
@@ -2133,20 +2135,80 @@ function renderPetDetail(detail, visits, purchases = []) {
   }
 }
 
-function renderPurchaseProductOptions(keyword = '') {
-  const candidates = products.filter((product) => matchesProduct(product, keyword)).slice(0, 20);
-  purchaseProductOptions.replaceChildren(...candidates.map((product) => {
-    const option = document.createElement('option');
-    option.value = product.name;
-    option.label = `${product.code} · 재고 ${product.product_stock?.[0]?.quantity ?? '—'}개`;
-    return option;
-  }));
+// 판매 관리의 상품 선택(초성 검색 + 클릭형 추천 목록)과 똑같은 방식을 입고 관리에도 적용.
+// 장년층 사용자가 정확한 이름을 다 타이핑하지 않아도, 초성 몇 글자나 클릭만으로 고를 수 있게 한다.
+let activePurchaseSuggestionIndex = -1;
+
+function closePurchaseSuggestions() {
+  activePurchaseSuggestionIndex = -1;
+  purchaseProductSuggestions.hidden = true;
+  purchaseProductSearch.setAttribute('aria-expanded', 'false');
+  purchaseProductSearch.removeAttribute('aria-activedescendant');
+}
+
+async function selectPurchaseProduct(product) {
+  purchaseProductValue.value = product.code;
+  purchaseProductSearch.value = product.name;
+  purchaseProductHint.textContent = product.track_stock
+    ? `${product.code} · 현재 재고 ${product.product_stock?.[0]?.quantity ?? '—'}개`
+    : `${product.code} · 처음 입고하는 상품입니다`;
+  closePurchaseSuggestions();
+  rememberProduct(product);
+  purchaseQuantity.focus();
+  purchaseQuantity.select();
+  if (!purchaseUnitCost.value) {
+    try {
+      const rows = await apiAll(`purchase_items?select=unit_cost,purchased_at&product_id=eq.${product.id}&order=purchased_at.desc&limit=1`);
+      if (rows[0] && !purchaseUnitCost.value) purchaseUnitCost.value = rows[0].unit_cost;
+    } catch { /* 이전 단가 조회 실패는 무시하고 직접 입력하게 둠 */ }
+  }
+}
+
+function renderPurchaseSuggestions(keyword = '') {
+  const suggested = getSuggestedProducts(keyword);
+  activePurchaseSuggestionIndex = -1;
+  purchaseProductSuggestions.replaceChildren();
+  purchaseProductSearch.setAttribute('aria-expanded', 'true');
+
+  if (!suggested.length) {
+    const empty = document.createElement('p');
+    empty.className = 'suggestion-empty';
+    empty.textContent = '일치하는 상품이 없습니다. 상품명, 코드 또는 초성을 다시 입력하세요.';
+    purchaseProductSuggestions.append(empty);
+    purchaseProductSuggestions.hidden = false;
+    return;
+  }
+
+  suggested.forEach((product, index) => {
+    const option = document.createElement('button');
+    option.type = 'button';
+    option.className = 'product-suggestion';
+    option.id = `purchase-product-option-${index}`;
+    option.setAttribute('role', 'option');
+    option.innerHTML = '<span><b></b><small></small></span><em></em>';
+    option.querySelector('b').textContent = product.name;
+    option.querySelector('small').textContent = product.code;
+    option.querySelector('em').textContent = product.track_stock ? `재고 ${product.product_stock?.[0]?.quantity ?? '—'}개` : '첫 입고';
+    option.addEventListener('mousedown', (event) => event.preventDefault());
+    option.addEventListener('click', () => selectPurchaseProduct(product));
+    purchaseProductSuggestions.append(option);
+  });
+  purchaseProductSuggestions.hidden = false;
+  purchaseProductHint.textContent = keyword.trim() ? `${suggested.length}개 상품을 찾았습니다. ↑↓와 Enter로도 선택할 수 있습니다.` : '최근 입고한 상품과 추천 상품입니다. 상품명·코드·초성으로 찾을 수 있습니다.';
+}
+
+function movePurchaseSuggestion(step) {
+  const options = [...purchaseProductSuggestions.querySelectorAll('.product-suggestion')];
+  if (!options.length) return;
+  activePurchaseSuggestionIndex = (activePurchaseSuggestionIndex + step + options.length) % options.length;
+  options.forEach((option, index) => option.classList.toggle('active', index === activePurchaseSuggestionIndex));
+  const activeOption = options[activePurchaseSuggestionIndex];
+  purchaseProductSearch.setAttribute('aria-activedescendant', activeOption.id);
+  activeOption.scrollIntoView({ block: 'nearest' });
 }
 
 function findPurchaseProduct() {
-  const entered = purchaseProductSearch.value.trim().toLowerCase();
-  if (!entered) return null;
-  return products.find((product) => product.name.toLowerCase() === entered || product.code.toLowerCase() === entered) || null;
+  return products.find((product) => product.code === purchaseProductValue.value) || null;
 }
 
 function renderPurchase() {
@@ -2184,7 +2246,7 @@ function preparePurchases() {
   purchaseDate.value = getLocalDate();
   purchaseDate.max = getLocalDate();
   purchaseExpiryDate.min = getLocalDate();
-  renderPurchaseProductOptions();
+  purchaseProductHint.textContent = '상품명·코드·초성을 입력하거나 입력창을 눌러 추천 상품을 확인하세요.';
   document.querySelector('#purchaseMessage').textContent = '상품을 검색해 수량·단가를 넣고 "입고 목록에 담기"를 누르세요. 다 담았으면 아래에서 입고 등록을 누르면 끝입니다.';
 }
 
@@ -2488,16 +2550,24 @@ ledgerMonth.addEventListener('change', (event) => {
   selectedLedgerMonth = event.target.value;
   renderProducts(productSearch.value);
 });
-purchaseProductSearch.addEventListener('input', () => renderPurchaseProductOptions(purchaseProductSearch.value));
-purchaseProductSearch.addEventListener('change', async () => {
-  const product = findPurchaseProduct();
-  if (!product) return;
-  purchaseQuantity.focus();
-  if (purchaseUnitCost.value) return; // 입력해둔 값이 있으면 덮어쓰지 않음
-  try {
-    const rows = await apiAll(`purchase_items?select=unit_cost,purchased_at&product_id=eq.${product.id}&order=purchased_at.desc&limit=1`);
-    if (rows[0] && !purchaseUnitCost.value) purchaseUnitCost.value = rows[0].unit_cost;
-  } catch { /* 이전 단가 조회 실패는 무시하고 직접 입력하게 둠 */ }
+purchaseProductSearch.addEventListener('focus', () => renderPurchaseSuggestions(purchaseProductSearch.value));
+purchaseProductSearch.addEventListener('input', () => {
+  purchaseProductValue.value = '';
+  renderPurchaseSuggestions(purchaseProductSearch.value);
+});
+purchaseProductSearch.addEventListener('keydown', (event) => {
+  if (event.key === 'ArrowDown') { event.preventDefault(); renderPurchaseSuggestions(purchaseProductSearch.value); movePurchaseSuggestion(1); }
+  if (event.key === 'ArrowUp') { event.preventDefault(); renderPurchaseSuggestions(purchaseProductSearch.value); movePurchaseSuggestion(-1); }
+  if (event.key === 'Escape') closePurchaseSuggestions();
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    const options = [...purchaseProductSuggestions.querySelectorAll('.product-suggestion')];
+    const selectedOption = options[activePurchaseSuggestionIndex] || options[0];
+    selectedOption?.click();
+  }
+});
+document.addEventListener('click', (event) => {
+  if (!event.target.closest('.purchase-product-field')) closePurchaseSuggestions();
 });
 
 document.querySelector('#newSupplierToggle').addEventListener('click', () => {
@@ -2595,7 +2665,7 @@ document.querySelector('#addPurchaseItem').addEventListener('click', () => {
   const quantity = Number(purchaseQuantity.value);
   const unitCost = Number(purchaseUnitCost.value);
   const message = document.querySelector('#purchaseMessage');
-  if (!product) { purchaseProductSearch.focus(); message.textContent = '목록에서 재고 관리 상품을 선택해 주세요.'; return; }
+  if (!product) { purchaseProductSearch.focus(); message.textContent = '추천 목록에서 상품을 하나 선택해 주세요.'; return; }
   if (!Number.isFinite(quantity) || quantity <= 0) { purchaseQuantity.focus(); return; }
   if (!Number.isFinite(unitCost) || unitCost < 0 || purchaseUnitCost.value === '') { purchaseUnitCost.focus(); return; }
   const existing = purchaseItems.find((item) => item.id === product.id && item.unitCost === unitCost && item.lotNo === purchaseLotNo.value.trim() && item.expiryDate === purchaseExpiryDate.value);
@@ -2603,6 +2673,8 @@ document.querySelector('#addPurchaseItem').addEventListener('click', () => {
   else purchaseItems.push({ id: product.id, name: product.name, quantity, unitCost, lotNo: purchaseLotNo.value.trim(), expiryDate: purchaseExpiryDate.value });
   renderPurchase();
   purchaseProductSearch.value = '';
+  purchaseProductValue.value = '';
+  purchaseProductHint.textContent = '상품명·코드·초성을 입력하거나 입력창을 눌러 추천 상품을 확인하세요.';
   purchaseQuantity.value = 1;
   purchaseUnitCost.value = '';
   purchaseLotNo.value = '';
