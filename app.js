@@ -468,8 +468,13 @@ const legacySalesSearch = document.querySelector('#legacySalesSearch');
 const legacySalesSummary = document.querySelector('#legacySalesSummary');
 const legacySalesMonthSummary = document.querySelector('#legacySalesMonthSummary');
 const legacySalesRows = document.querySelector('#legacySalesRows');
+const legacySalesHead = document.querySelector('#legacySalesHead');
 const legacySalesEmpty = document.querySelector('#legacySalesEmpty');
 const legacySalesChart = document.querySelector('#legacySalesChart');
+const legacySalesChartTitle = document.querySelector('#legacySalesChartTitle');
+const legacySalesChartLegend = document.querySelector('#legacySalesChartLegend');
+const legacySalesViewTabs = document.querySelector('#legacySalesViewTabs');
+let legacySalesView = 'daily';
 const weekdayLabel = ['일', '월', '화', '수', '목', '금', '토'];
 // 2024~2026 대한민국 공휴일·명절(대체공휴일 포함). 매출 데이터 기간(2024-03~2026-10)만 다룸
 const KOREA_HOLIDAYS = {
@@ -514,9 +519,79 @@ async function loadLegacySales() {
   renderLegacySales();
 }
 
-function renderLegacySalesChart(monthRows) {
+function monthLabel(month) {
+  return `${month.slice(0, 4)}년 ${Number(month.slice(5, 7))}월`;
+}
+
+function shiftMonth(month, offset) {
+  const [y, m] = month.split('-').map(Number);
+  const d = new Date(y, m - 1 + offset, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function setBarChart(items) {
+  const max = Math.max(...items.map((d) => Math.abs(d.amount)), 1);
+  legacySalesChart.replaceChildren(...items.map(({ label, amount, title, cls }) => {
+    const item = document.createElement('div');
+    item.className = `bar-item${cls ? ' ' + cls : ''}`;
+    if (title) item.title = title;
+    const bar = document.createElement('i');
+    bar.style.height = `${Math.max((Math.abs(amount) / max) * 100, amount !== 0 ? 3 : 0)}%`;
+    const value = document.createElement('span');
+    value.className = 'bar-value';
+    value.textContent = amount ? Math.round(amount / 1000).toLocaleString('ko-KR') : '';
+    item.append(bar, value, document.createTextNode(label));
+    return item;
+  }));
+}
+
+const LEGACY_SALES_COL_WIDTH = {
+  '일자': 95, '요일': 68, '수량': 72, '단가': 96, '금액': 110, '마진율': 76,
+  '건수': 72, '비중': 68, '평균마진율': 94, '거래건수': 86, '전월대비': 86,
+  '전년동월대비': 104, '건당 평균금액': 104, '매출액': 110,
+};
+
+function setTableHead(labels, wideIndex) {
+  legacySalesHead.replaceChildren();
+  const tr = document.createElement('tr');
+  labels.forEach((label, i) => {
+    const th = document.createElement('th');
+    th.textContent = label;
+    if (i === wideIndex) th.classList.add('col-wide');
+    else th.style.width = `${LEGACY_SALES_COL_WIDTH[label] || 90}px`;
+    tr.append(th);
+  });
+  legacySalesHead.append(tr);
+}
+
+function setRows(rowsData, wideIndex, totalCells) {
+  legacySalesRows.replaceChildren();
+  if (totalCells) {
+    const totalTr = document.createElement('tr');
+    totalTr.className = 'legacy-sales-total-row';
+    totalCells.forEach((value) => { const td = document.createElement('td'); td.textContent = value; totalTr.append(td); });
+    legacySalesRows.append(totalTr);
+  }
+  rowsData.forEach(({ cells, cls }) => {
+    const tr = document.createElement('tr');
+    if (cls) tr.className = cls;
+    cells.forEach((value, i) => {
+      const td = document.createElement('td');
+      td.textContent = value;
+      if (i === wideIndex) td.classList.add('col-wide');
+      tr.append(td);
+    });
+    legacySalesRows.append(tr);
+  });
+}
+
+function marginPct(row) {
+  return row.margin_rate == null ? null : Number(row.margin_rate) * 100;
+}
+
+function renderDailyView(rows) {
   const byDay = new Map();
-  monthRows.forEach((row) => byDay.set(row.sold_on, (byDay.get(row.sold_on) || 0) + Number(row.amount || 0)));
+  rows.forEach((row) => byDay.set(row.sold_on, (byDay.get(row.sold_on) || 0) + Number(row.amount || 0)));
   const [year, month] = selectedLegacySalesMonth.split('-').map(Number);
   const daysInMonth = new Date(year, month, 0).getDate();
   const dayAmounts = [];
@@ -524,50 +599,167 @@ function renderLegacySalesChart(monthRows) {
     const dateText = `${selectedLegacySalesMonth}-${String(day).padStart(2, '0')}`;
     dayAmounts.push({ day, dateText, amount: byDay.get(dateText) || 0, meta: dateMeta(dateText) });
   }
-  const max = Math.max(...dayAmounts.map((d) => d.amount), 1);
-  legacySalesChart.replaceChildren(...dayAmounts.map(({ day, amount, meta }) => {
-    const item = document.createElement('div');
-    item.className = `bar-item${meta.holiday ? ' holiday' : meta.isWeekend ? ' weekend' : ''}`;
-    item.title = `${selectedLegacySalesMonth}-${String(day).padStart(2, '0')} (${meta.weekday})${meta.holiday ? ' · ' + meta.holiday : ''} · ${won(amount)}`;
-    const bar = document.createElement('i');
-    bar.style.height = `${Math.max((amount / max) * 100, amount > 0 ? 3 : 0)}%`;
-    const value = document.createElement('span');
-    value.className = 'bar-value';
-    value.textContent = amount > 0 ? Math.round(amount / 1000) : '';
-    item.append(bar, value, document.createTextNode(String(day)));
-    return item;
-  }));
+  setBarChart(dayAmounts.map(({ day, dateText, amount, meta }) => ({
+    label: String(day), amount,
+    cls: meta.holiday ? 'holiday' : meta.isWeekend ? 'weekend' : '',
+    title: `${dateText} (${meta.weekday})${meta.holiday ? ' · ' + meta.holiday : ''} · ${won(amount)}`,
+  })));
+  setTableHead(['일자', '요일', '상품명', '수량', '단가', '금액', '마진율'], 2);
+  if (!rows.length) { setRows([], 2, null); return; }
+  const totalAmount = rows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+  const totalQty = rows.reduce((sum, row) => sum + Number(row.quantity || 0), 0);
+  setRows(rows.map((row) => {
+    const meta = dateMeta(row.sold_on);
+    const weekdayText = meta.holiday ? `${meta.weekday} · ${meta.holiday}` : meta.weekday;
+    return {
+      cls: meta.holiday ? 'is-holiday' : meta.isWeekend ? 'is-weekend' : '',
+      cells: [row.sold_on, weekdayText, row.product_name_raw, row.quantity, won(row.unit_price), won(row.amount), row.margin_rate == null ? '—' : `${marginPct(row).toFixed(1)}%`],
+    };
+  }), 2, ['합계', '', `${rows.length.toLocaleString('ko-KR')}건`, totalQty.toLocaleString('ko-KR'), '—', won(totalAmount), '—']);
 }
+
+function renderProductView(rows) {
+  const byProduct = new Map();
+  rows.forEach((row) => {
+    const key = row.product_name_raw;
+    const entry = byProduct.get(key) || { name: key, qty: 0, amount: 0, marginSum: 0, marginCount: 0, count: 0 };
+    entry.qty += Number(row.quantity || 0);
+    entry.amount += Number(row.amount || 0);
+    entry.count += 1;
+    if (row.margin_rate != null) { entry.marginSum += Number(row.margin_rate); entry.marginCount += 1; }
+    byProduct.set(key, entry);
+  });
+  const list = [...byProduct.values()].sort((a, b) => b.amount - a.amount);
+  const totalAmount = list.reduce((sum, e) => sum + e.amount, 0);
+  setBarChart(list.slice(0, 12).map((e) => ({ label: e.name.length > 6 ? e.name.slice(0, 5) + '…' : e.name, amount: e.amount, title: `${e.name} · ${won(e.amount)}` })));
+  setTableHead(['상품명', '건수', '수량', '매출액', '비중', '평균마진율'], 0);
+  if (!list.length) { setRows([], 0, null); return; }
+  const totalQty = list.reduce((sum, e) => sum + e.qty, 0);
+  setRows(list.map((e) => ({
+    cells: [e.name, `${e.count.toLocaleString('ko-KR')}건`, e.qty.toLocaleString('ko-KR'), won(e.amount), `${((e.amount / totalAmount) * 100).toFixed(1)}%`, e.marginCount ? `${((e.marginSum / e.marginCount) * 100).toFixed(1)}%` : '—'],
+  })), 0, ['합계', `${rows.length.toLocaleString('ko-KR')}건`, totalQty.toLocaleString('ko-KR'), won(totalAmount), '100%', '—']);
+}
+
+function renderWeekdayView(rows) {
+  const buckets = weekdayLabel.map((label, idx) => ({ idx, label, amount: 0, qty: 0, count: 0 }));
+  rows.forEach((row) => {
+    const idx = new Date(`${row.sold_on}T00:00:00`).getDay();
+    buckets[idx].amount += Number(row.amount || 0);
+    buckets[idx].qty += Number(row.quantity || 0);
+    buckets[idx].count += 1;
+  });
+  setBarChart(buckets.map((b) => ({ label: b.label, amount: b.amount, cls: b.idx === 0 || b.idx === 6 ? 'weekend' : '', title: `${b.label}요일 · ${won(b.amount)}` })));
+  setTableHead(['요일', '거래건수', '수량', '매출액', '건당 평균금액'], -1);
+  const totalAmount = buckets.reduce((sum, b) => sum + b.amount, 0);
+  const totalQty = buckets.reduce((sum, b) => sum + b.qty, 0);
+  const totalCount = buckets.reduce((sum, b) => sum + b.count, 0);
+  setRows(buckets.map((b) => ({
+    cls: b.idx === 0 || b.idx === 6 ? 'is-weekend' : '',
+    cells: [`${b.label}요일`, `${b.count.toLocaleString('ko-KR')}건`, b.qty.toLocaleString('ko-KR'), won(b.amount), b.count ? won(Math.round(b.amount / b.count)) : '—'],
+  })), -1, ['합계', `${totalCount.toLocaleString('ko-KR')}건`, totalQty.toLocaleString('ko-KR'), won(totalAmount), totalCount ? won(Math.round(totalAmount / totalCount)) : '—']);
+}
+
+function renderMarginView(rows) {
+  const byProduct = new Map();
+  rows.forEach((row) => {
+    if (row.margin_rate == null) return;
+    const key = row.product_name_raw;
+    const entry = byProduct.get(key) || { name: key, amount: 0, marginSum: 0, marginCount: 0 };
+    entry.amount += Number(row.amount || 0);
+    entry.marginSum += Number(row.margin_rate);
+    entry.marginCount += 1;
+    byProduct.set(key, entry);
+  });
+  const list = [...byProduct.values()].map((e) => ({ ...e, avgMargin: (e.marginSum / e.marginCount) * 100 })).sort((a, b) => a.avgMargin - b.avgMargin);
+  setBarChart(list.slice(0, 12).map((e) => ({ label: e.name.length > 6 ? e.name.slice(0, 5) + '…' : e.name, amount: e.avgMargin, cls: e.avgMargin < 15 ? 'holiday' : e.avgMargin < 25 ? 'weekend' : '', title: `${e.name} · 평균마진율 ${e.avgMargin.toFixed(1)}%` })));
+  setTableHead(['상품명', '매출액', '평균마진율'], 0);
+  if (!list.length) { setRows([], 0, null); return; }
+  const totalAmount = list.reduce((sum, e) => sum + e.amount, 0);
+  const weightedMargin = list.reduce((sum, e) => sum + e.avgMargin * e.amount, 0) / (totalAmount || 1);
+  setRows(list.map((e) => ({
+    cls: e.avgMargin < 15 ? 'is-holiday' : '',
+    cells: [e.name, won(e.amount), `${e.avgMargin.toFixed(1)}%`],
+  })), 0, ['합계(매출 가중평균)', won(totalAmount), `${weightedMargin.toFixed(1)}%`]);
+}
+
+function monthTotals(month) {
+  const rows = legacySales.filter((row) => row.sold_on.startsWith(month));
+  return { month, amount: rows.reduce((sum, row) => sum + Number(row.amount || 0), 0), qty: rows.reduce((sum, row) => sum + Number(row.quantity || 0), 0), count: rows.length };
+}
+
+function renderRecent3mView() {
+  const months = [shiftMonth(selectedLegacySalesMonth, -2), shiftMonth(selectedLegacySalesMonth, -1), selectedLegacySalesMonth];
+  const totals = months.map(monthTotals);
+  setBarChart(totals.map((t) => ({ label: monthLabel(t.month).replace('년 ', '.').replace('월', ''), amount: t.amount, title: `${monthLabel(t.month)} · ${won(t.amount)}` })));
+  setTableHead(['월', '거래건수', '수량', '매출액', '전월대비'], -1);
+  setRows(totals.map((t, i) => {
+    const prev = i > 0 ? totals[i - 1].amount : null;
+    const diff = prev != null && prev > 0 ? ((t.amount - prev) / prev) * 100 : null;
+    return { cls: diff != null && diff > 0 ? 'is-diff-up' : diff != null && diff < 0 ? 'is-diff-down' : '', cells: [monthLabel(t.month), `${t.count.toLocaleString('ko-KR')}건`, t.qty.toLocaleString('ko-KR'), won(t.amount), diff == null ? '—' : `${diff > 0 ? '+' : ''}${diff.toFixed(1)}%`] };
+  }), -1, null);
+}
+
+function renderYoyView() {
+  const thisMonth = monthTotals(selectedLegacySalesMonth);
+  const lastYear = monthTotals(shiftMonth(selectedLegacySalesMonth, -12));
+  setBarChart([
+    { label: monthLabel(lastYear.month), amount: lastYear.amount, title: `${monthLabel(lastYear.month)} · ${won(lastYear.amount)}` },
+    { label: monthLabel(thisMonth.month), amount: thisMonth.amount, title: `${monthLabel(thisMonth.month)} · ${won(thisMonth.amount)}` },
+  ]);
+  setTableHead(['월', '거래건수', '수량', '매출액', '전년동월대비'], -1);
+  const diff = lastYear.amount > 0 ? ((thisMonth.amount - lastYear.amount) / lastYear.amount) * 100 : null;
+  setRows([
+    { cells: [monthLabel(lastYear.month), `${lastYear.count.toLocaleString('ko-KR')}건`, lastYear.qty.toLocaleString('ko-KR'), won(lastYear.amount), '—'] },
+    { cls: diff != null && diff > 0 ? 'is-diff-up' : diff != null && diff < 0 ? 'is-diff-down' : '', cells: [monthLabel(thisMonth.month), `${thisMonth.count.toLocaleString('ko-KR')}건`, thisMonth.qty.toLocaleString('ko-KR'), won(thisMonth.amount), diff == null ? '데이터 없음' : `${diff > 0 ? '+' : ''}${diff.toFixed(1)}%`] },
+  ], -1, null);
+}
+
+const legacySalesViewConfig = {
+  daily: { title: '일별 매출 추이', legend: true },
+  product: { title: '상품별 매출 비중 (상위 12)', legend: false },
+  weekday: { title: '요일별 매출 패턴', legend: false },
+  margin: { title: '상품별 평균 마진율 (낮은 순, 상위 12)', legend: false },
+  recent3m: { title: '최근 3개월 매출 비교', legend: false },
+  yoy: { title: '전년 동기 매출 비교', legend: false },
+};
 
 function renderLegacySales() {
   const keyword = legacySalesSearch.value.trim().toLowerCase();
   const monthRows = legacySales.filter((row) => row.sold_on.startsWith(selectedLegacySalesMonth));
-  renderLegacySalesChart(monthRows);
-  const rows = monthRows.filter((row) => !keyword || row.product_name_raw.toLowerCase().includes(keyword));
-  if (!rows.length) {
+  const filteredRows = monthRows.filter((row) => !keyword || row.product_name_raw.toLowerCase().includes(keyword));
+  const config = legacySalesViewConfig[legacySalesView];
+  legacySalesChartTitle.firstChild.textContent = config.title + ' ';
+  legacySalesChartLegend.hidden = !config.legend;
+
+  if (!filteredRows.length && legacySalesView !== 'recent3m' && legacySalesView !== 'yoy') {
     legacySalesMonthSummary.hidden = true;
+    setBarChart([]);
     legacySalesRows.replaceChildren();
     legacySalesEmpty.hidden = false;
     return;
   }
   legacySalesEmpty.hidden = true;
-  const totalAmount = rows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+  const totalAmount = filteredRows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
   legacySalesMonthSummary.hidden = false;
-  legacySalesMonthSummary.textContent = `${selectedLegacySalesMonth} · ${rows.length.toLocaleString('ko-KR')}건 · 매출액 ${won(totalAmount)}`;
-  legacySalesRows.replaceChildren(...rows.map((row) => {
-    const tr = document.createElement('tr');
-    const meta = dateMeta(row.sold_on);
-    const weekdayText = meta.holiday ? `${meta.weekday} · ${meta.holiday}` : meta.weekday;
-    if (meta.holiday) tr.classList.add('is-holiday'); else if (meta.isWeekend) tr.classList.add('is-weekend');
-    [row.sold_on, weekdayText, row.product_name_raw, row.quantity, won(row.unit_price), won(row.amount), row.margin_rate == null ? '—' : `${(Number(row.margin_rate) * 100).toFixed(1)}%`].forEach((value) => {
-      const cell = document.createElement('td'); cell.textContent = value; tr.append(cell);
-    });
-    return tr;
-  }));
+  legacySalesMonthSummary.textContent = `${selectedLegacySalesMonth} · ${filteredRows.length.toLocaleString('ko-KR')}건 · 매출액 ${won(totalAmount)}`;
+
+  if (legacySalesView === 'product') renderProductView(filteredRows);
+  else if (legacySalesView === 'weekday') renderWeekdayView(filteredRows);
+  else if (legacySalesView === 'margin') renderMarginView(filteredRows);
+  else if (legacySalesView === 'recent3m') renderRecent3mView();
+  else if (legacySalesView === 'yoy') renderYoyView();
+  else renderDailyView(filteredRows);
 }
 
 legacySalesMonth.addEventListener('change', () => { selectedLegacySalesMonth = legacySalesMonth.value; renderLegacySales(); });
 legacySalesSearch.addEventListener('input', renderLegacySales);
+legacySalesViewTabs.addEventListener('click', (event) => {
+  const button = event.target.closest('button[data-view]');
+  if (!button) return;
+  legacySalesView = button.dataset.view;
+  legacySalesViewTabs.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b === button));
+  renderLegacySales();
+});
 
 async function loadInventoryMovements() {
   const pageSize = 1000;
