@@ -552,7 +552,7 @@ function setBarChart(items) {
 }
 
 const LEGACY_SALES_COL_WIDTH = {
-  '일자': 95, '요일': 68, '수량': 72, '단가': 96, '금액': 110, '마진율': 76,
+  '일자': 78, '요일': 48, '수량': 84, '단가': 96, '금액': 110, '마진율': 72,
   '건수': 72, '비중': 68, '평균마진율': 94, '거래건수': 86, '전월대비': 86,
   '전년동월대비': 104, '건당 평균금액': 104, '매출액': 110,
   '예상기온': 90, '예상강수': 90, '공휴일': 90, '예측 매출액': 120, '추정인구': 100,
@@ -564,7 +564,7 @@ function setTableHead(labels, wideIndex) {
   labels.forEach((label, i) => {
     const th = document.createElement('th');
     th.textContent = label;
-    if (i === wideIndex) th.classList.add('col-wide');
+    if (i === wideIndex) { th.classList.add('col-wide'); th.style.width = '280px'; }
     else th.style.width = `${LEGACY_SALES_COL_WIDTH[label] || 90}px`;
     tr.append(th);
   });
