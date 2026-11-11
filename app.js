@@ -2168,14 +2168,24 @@ function renderPurchase() {
   document.querySelector('#purchaseTotal').textContent = `합계 ${Math.round(total).toLocaleString('ko-KR')}원`;
 }
 
-function preparePurchases() {
+const LAST_SUPPLIER_KEY = 'purchase-last-supplier';
+
+function fillSupplierOptions() {
   purchaseSupplier.replaceChildren(new Option('거래처를 선택하세요', ''), ...suppliers.map((supplier) => new Option(supplier.name, supplier.id)));
-  [purchaseSupplier, purchaseDate, purchaseProductSearch, purchaseQuantity, purchaseUnitCost, purchaseLotNo, purchaseExpiryDate, document.querySelector('#addPurchaseItem')].forEach((element) => { element.disabled = false; });
+  let remembered = '';
+  try { remembered = localStorage.getItem(LAST_SUPPLIER_KEY) || ''; } catch { /* 저장 불가 시 무시 */ }
+  if (suppliers.length === 1) purchaseSupplier.value = String(suppliers[0].id);
+  else if (remembered && suppliers.some((s) => String(s.id) === remembered)) purchaseSupplier.value = remembered;
+}
+
+function preparePurchases() {
+  fillSupplierOptions();
+  [purchaseSupplier, purchaseDate, purchaseProductSearch, purchaseQuantity, purchaseUnitCost, purchaseLotNo, purchaseExpiryDate, document.querySelector('#addPurchaseItem'), document.querySelector('#newSupplierToggle'), document.querySelector('#purchaseExtraToggle')].forEach((element) => { element.disabled = false; });
   purchaseDate.value = getLocalDate();
   purchaseDate.max = getLocalDate();
   purchaseExpiryDate.min = getLocalDate();
   renderPurchaseProductOptions();
-  document.querySelector('#purchaseMessage').textContent = '거래처와 입고일을 확인한 뒤 실제 입고 수량과 매입 단가를 입력하세요.';
+  document.querySelector('#purchaseMessage').textContent = '상품을 검색해 수량·단가를 넣고 "입고 목록에 담기"를 누르세요. 다 담았으면 아래에서 입고 등록을 누르면 끝입니다.';
 }
 
 async function loadSuppliers() {
@@ -2479,8 +2489,47 @@ ledgerMonth.addEventListener('change', (event) => {
   renderProducts(productSearch.value);
 });
 purchaseProductSearch.addEventListener('input', () => renderPurchaseProductOptions(purchaseProductSearch.value));
-purchaseProductSearch.addEventListener('change', () => {
-  if (findPurchaseProduct()) purchaseQuantity.focus();
+purchaseProductSearch.addEventListener('change', async () => {
+  const product = findPurchaseProduct();
+  if (!product) return;
+  purchaseQuantity.focus();
+  if (purchaseUnitCost.value) return; // 입력해둔 값이 있으면 덮어쓰지 않음
+  try {
+    const rows = await apiAll(`purchase_items?select=unit_cost,purchased_at&product_id=eq.${product.id}&order=purchased_at.desc&limit=1`);
+    if (rows[0] && !purchaseUnitCost.value) purchaseUnitCost.value = rows[0].unit_cost;
+  } catch { /* 이전 단가 조회 실패는 무시하고 직접 입력하게 둠 */ }
+});
+
+document.querySelector('#newSupplierToggle').addEventListener('click', () => {
+  const row = document.querySelector('#newSupplierRow');
+  row.hidden = !row.hidden;
+  if (!row.hidden) document.querySelector('#newSupplierName').focus();
+});
+
+document.querySelector('#saveSupplier').addEventListener('click', async () => {
+  const nameInput = document.querySelector('#newSupplierName');
+  const name = nameInput.value.trim();
+  const message = document.querySelector('#purchaseMessage');
+  if (!name) { nameInput.focus(); return; }
+  try {
+    const existingIds = await apiAll('suppliers?select=id&order=id.desc&limit=1');
+    const nextId = (existingIds[0]?.id || 0) + 1;
+    const response = await api('suppliers', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ id: nextId, name }) });
+    if (!response.ok) throw new Error('거래처 등록에 실패했습니다.');
+    const [created] = await response.json();
+    suppliers.push(created);
+    suppliers.sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+    fillSupplierOptions();
+    purchaseSupplier.value = String(created.id);
+    nameInput.value = '';
+    document.querySelector('#newSupplierRow').hidden = true;
+    message.textContent = `거래처 "${created.name}"를 추가하고 선택했습니다.`;
+  } catch (error) { message.textContent = error.message; }
+});
+
+document.querySelector('#purchaseExtraToggle').addEventListener('click', (event) => {
+  document.querySelector('#purchaseExtraFields').hidden = false;
+  event.target.hidden = true;
 });
 saleProductSearch.addEventListener('focus', () => renderProductSuggestions(saleProductSearch.value));
 saleProductSearch.addEventListener('input', () => {
@@ -2614,6 +2663,7 @@ document.querySelector('#submitPurchase').addEventListener('click', async () => 
       throw new Error(errorBody.message || errorBody.hint || '입고 등록에 실패했습니다. 거래처와 수량, 단가를 확인해 주세요.');
     }
     const purchaseId = await response.json();
+    try { localStorage.setItem(LAST_SUPPLIER_KEY, purchaseSupplier.value); } catch { /* 저장 불가 시 무시 */ }
     purchaseItems = []; renderPurchase();
     await Promise.all([refreshProductsAfterSale(), loadDashboard()]);
     message.textContent = `입고가 등록되었습니다. 입고 번호: ${purchaseId} · 재고와 대시보드에 반영되었습니다.`;
