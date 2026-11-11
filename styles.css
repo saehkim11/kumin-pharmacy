@@ -150,8 +150,14 @@ html[data-theme="dark"] .legacy-sales-view-tabs button{background:#111c2e;border
 .legacy-sales-table tr.is-diff-up td:last-child{color:#1f9254;font-weight:700}.legacy-sales-table tr.is-diff-down td:last-child{color:#d6336c;font-weight:700}
 .bar-chart.weather-mode{display:block;height:auto;padding:4px 0 0}
 .weather-effect-grid{margin-top:18px;margin-bottom:0}.weather-effect-grid .summary-card{padding:14px}.weather-effect-grid .summary-card p{margin:0 0 8px;font-size:12px}.weather-effect-grid .summary-card strong{font-size:18px}
-.weather-day.forecast small:last-child{color:var(--blue);font-weight:700}
-.weather-day.is-weekend{border-color:#f0b27a}.weather-day.is-holiday{border-color:#e8a0b4}
+.weather-calendar{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px}
+.weather-cal-head{padding:2px 0 6px;color:var(--muted);font-size:11px;font-weight:700;text-align:center}.weather-cal-head.sun{color:#d6336c}.weather-cal-head.sat{color:#2f6fed}
+.weather-cal-empty{visibility:hidden}
+.weather-day.is-holiday{border-color:#e8a0b4;background:#fdf1f5}.weather-day.is-closed{border-color:var(--line);background:var(--paper);opacity:.72}
+.weather-closed-tag{color:#d6336c!important;font-weight:800}
+.weather-effect-grid .kpi-delta{font-weight:800}
+.weather-weekday-note{margin:10px 2px 0;color:var(--muted);font-size:11px}
+html[data-theme="dark"] .weather-day.is-holiday{background:#2a1c26}html[data-theme="dark"] .weather-day.is-closed{background:#15202f}
 .legacy-sales-toolbar{grid-template-columns:200px minmax(220px,420px);gap:14px;max-width:700px;margin:18px 0 12px}.legacy-sales-toolbar label{display:block;margin:0 0 6px;color:#445066;font-size:13px;font-weight:700}.legacy-sales-toolbar label span{color:var(--muted);font-weight:400}.legacy-sales-toolbar select,.legacy-sales-toolbar input{width:100%;height:42px;padding:0 10px;border:1px solid #d9e0ea;border-radius:8px;background:#fff;color:var(--ink);font:inherit}.legacy-sales-toolbar select:focus,.legacy-sales-toolbar input:focus{outline:3px solid rgba(47,111,237,.15);border-color:var(--blue)}
 @media(max-width:560px){.legacy-sales-toolbar{grid-template-columns:1fr}}
 html[data-theme="dark"] .legacy-sales-toolbar select,html[data-theme="dark"] .legacy-sales-toolbar input{background:#111c2e;border-color:#40516d;color:var(--ink)}

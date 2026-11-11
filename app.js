@@ -496,7 +496,12 @@ const KOREA_HOLIDAYS = {
 function dateMeta(dateText) {
   const day = new Date(`${dateText}T00:00:00`).getDay();
   const holiday = KOREA_HOLIDAYS[dateText];
-  return { weekday: weekdayLabel[day], isWeekend: day === 0 || day === 6, holiday };
+  return { dow: day, weekday: weekdayLabel[day], isWeekend: day === 0 || day === 6, holiday };
+}
+
+// 약국 영업 규칙: 월~토 영업, 일요일·공휴일 휴무(실데이터 기준 해당일 매출이 사실상 0에 수렴)
+function isClosedDay(meta) {
+  return meta.dow === 0 || !!meta.holiday;
 }
 
 async function loadLegacySales() {
@@ -832,12 +837,46 @@ function buildPopulationModel() {
 }
 
 function estimatePopulation(popModel, meta, temp, precip) {
-  return popModel ? dot([1, meta.isWeekend ? 1 : 0, meta.holiday ? 1 : 0, temp, precip], popModel.beta) : null;
+  return popModel && temp != null ? dot([1, meta.isWeekend ? 1 : 0, meta.holiday ? 1 : 0, temp, precip], popModel.beta) : null;
 }
 
-// 요일·명절·기온·강수·추정 생활인구·추세(날짜 순번)로 일별 매출을 설명하는 경량 회귀 모델.
-// 생활인구는 실측치가 있는 날은 실측값을, 그 밖의 날(과거 대부분·미래 예보일)은 위 보조 모델의
-// 추정값을 써서 전체 학습 기간에 빠짐없이 변수로 넣는다.
+// 월~금(5개 더미, 토요일 기준) · 기온 · 강수 · 추정 생활인구 · 장기추세 · 연중 계절성(사인/코사인)
+// · 전주 동요일 매출(lag7) · 최근7일 평균매출(roll7) 로 구성한 특징 벡터 빌더.
+// 일요일·공휴일은 영업을 안 해 매출이 사실상 0으로 수렴하므로(실데이터로 확인) 회귀 대상에서 아예
+// 뺀다 — "추정"이 필요한 변동이 아니라 영업 규칙이기 때문.
+function makeFeatureBuilder(hasPop) {
+  const names = ['intercept', 'mon', 'tue', 'wed', 'thu', 'fri', 'temp', 'precip'];
+  if (hasPop) names.push('pop');
+  names.push('trend', 'sin', 'cos', 'lag7', 'roll7');
+  const index = Object.fromEntries(names.map((n, i) => [n, i]));
+  function build(ctx) {
+    const row = new Array(names.length).fill(0);
+    row[index.intercept] = 1;
+    if (ctx.dow === 1) row[index.mon] = 1;
+    if (ctx.dow === 2) row[index.tue] = 1;
+    if (ctx.dow === 3) row[index.wed] = 1;
+    if (ctx.dow === 4) row[index.thu] = 1;
+    if (ctx.dow === 5) row[index.fri] = 1;
+    row[index.temp] = ctx.temp;
+    row[index.precip] = ctx.precip;
+    if (hasPop) row[index.pop] = (ctx.pop || 0) / 1000;
+    row[index.trend] = ctx.trend;
+    row[index.sin] = ctx.sinDoy;
+    row[index.cos] = ctx.cosDoy;
+    row[index.lag7] = ctx.lag7 / 10000;
+    row[index.roll7] = ctx.roll7 / 10000;
+    return row;
+  }
+  return { build, index, names };
+}
+
+function dayOfYear(d) {
+  return Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 86400000);
+}
+
+// 요일·명절·기온·강수·추정 생활인구·계절성·전주 동요일 매출·최근7일 평균매출로 영업일 매출을
+// 설명하는 경량 회귀 모델 (휴무일 제외). GitHub의 Rossmann Store Sales 류 소매 매출 예측 프로젝트들이
+// 공통으로 쓰는 lag/rolling 매출, 요일 더미, 계절성(월/계절) 특징을 참고해 구성했다.
 function buildWeatherModel() {
   if (weatherModelCache) return weatherModelCache;
   if (!legacySales.length || !environmentalWeather.length) return null;
@@ -849,26 +888,33 @@ function buildWeatherModel() {
   const salesDates = [...salesByDate.keys()].sort();
   const minDateObj = new Date(`${salesDates[0]}T00:00:00`);
   const maxDateObj = new Date(`${salesDates.at(-1)}T00:00:00`);
-  const days = [];
+  const allDays = [];
   for (let d = new Date(minDateObj); d <= maxDateObj; d.setDate(d.getDate() + 1)) {
     const dateText = d.toISOString().slice(0, 10);
     const w = weatherByDate.get(dateText);
-    if (!w || w.temp_mean == null) continue;
     const meta = dateMeta(dateText);
-    const temp = Number(w.temp_mean), precip = Number(w.precipitation_mm || 0);
+    const temp = w && w.temp_mean != null ? Number(w.temp_mean) : null;
+    const precip = w ? Number(w.precipitation_mm || 0) : null;
     const pop = popByDate.has(dateText) ? popByDate.get(dateText) : estimatePopulation(popModel, meta, temp, precip);
-    days.push({
-      date: dateText, amount: salesByDate.get(dateText) || 0, temp, precip,
-      isWeekend: meta.isWeekend ? 1 : 0, isHoliday: meta.holiday ? 1 : 0,
-      trend: Math.round((d - minDateObj) / 86400000), pop,
+    const doy = dayOfYear(d);
+    allDays.push({
+      date: dateText, amount: salesByDate.get(dateText) || 0, temp, precip, pop,
+      dow: meta.dow, closed: isClosedDay(meta),
+      trend: Math.round((d - minDateObj) / 86400000),
+      sinDoy: Math.sin((2 * Math.PI * doy) / 365.25), cosDoy: Math.cos((2 * Math.PI * doy) / 365.25),
     });
   }
-  if (days.length < 30) return null;
-  const featureRow = (d) => popModel
-    ? [1, d.isWeekend, d.isHoliday, d.temp, d.precip, d.trend, d.pop / 1000]
-    : [1, d.isWeekend, d.isHoliday, d.temp, d.precip, d.trend];
-  const X = days.map(featureRow);
-  const y = days.map((d) => d.amount);
+  const builder = makeFeatureBuilder(!!popModel);
+  const trainRows = [];
+  allDays.forEach((d, i) => {
+    if (d.closed || d.temp == null || i < 7) return;
+    const lag7 = allDays[i - 7].amount;
+    const roll7 = allDays.slice(i - 7, i).reduce((s, x) => s + x.amount, 0) / 7;
+    trainRows.push({ ...d, lag7, roll7 });
+  });
+  if (trainRows.length < 30) return null;
+  const X = trainRows.map((d) => builder.build(d));
+  const y = trainRows.map((d) => d.amount);
   const beta = fitOLS(X, y);
   if (!beta) return null;
   const predicted = X.map((row) => dot(row, beta));
@@ -876,15 +922,80 @@ function buildWeatherModel() {
   const ssTot = y.reduce((s, v) => s + (v - meanY) ** 2, 0);
   const ssRes = y.reduce((s, v, i) => s + (v - predicted[i]) ** 2, 0);
   const r2 = ssTot > 0 ? 1 - ssRes / ssTot : null;
-  const pearsonTemp = pearson(days.map((d) => d.temp), y);
-  const pearsonPrecip = pearson(days.map((d) => d.precip), y);
-  const popPairs = days.filter((d) => popByDate.has(d.date));
+  const pearsonTemp = pearson(trainRows.map((d) => d.temp), y);
+  const pearsonPrecip = pearson(trainRows.map((d) => d.precip), y);
+  const popPairs = trainRows.filter((d) => popByDate.has(d.date));
   const pearsonPop = popPairs.length >= 10 ? pearson(popPairs.map((d) => d.pop), popPairs.map((d) => d.amount)) : null;
   weatherModelCache = {
-    beta, days, r2, pearsonTemp, pearsonPrecip, pearsonPop, popN: popPairs.length, minDateObj, popModel,
-    hasPop: !!popModel,
+    beta, builder, allDays, trainRows, r2, pearsonTemp, pearsonPrecip, pearsonPop,
+    popN: popPairs.length, minDateObj, popModel, hasPop: !!popModel,
   };
   return weatherModelCache;
+}
+
+// 학습 마지막 날짜 다음날부터 예보 첫째 날 전날까지(이미 지난 날이라 실측 날씨는 있지만 매출 기록이
+// 없는 공백 구간)를 먼저 하루씩 예측해 이어 붙이고(가교 구간), 그 다음 예보 기간을 이어서 예측한다.
+// lag7·최근7일 평균매출이 끊기지 않게 하려는 목적 — 예보 구간만 뚝 떼어 보면 지난 한 주 흐름을
+// 반영 못 한다.
+function forecastWeatherSales(model) {
+  const allDays = model.allDays.slice();
+  const weatherByDate = new Map(environmentalWeather.map((w) => [w.date, w]));
+  function pushDay(dateText, temp, precip, weatherCode) {
+    const meta = dateMeta(dateText);
+    const i = allDays.length;
+    const pop = estimatePopulation(model.popModel, meta, temp, precip);
+    const doy = dayOfYear(new Date(`${dateText}T00:00:00`));
+    const closed = isClosedDay(meta);
+    let amount = 0;
+    if (!closed && i >= 7 && temp != null) {
+      const lag7 = allDays[i - 7].amount;
+      const roll7 = allDays.slice(i - 7, i).reduce((s, x) => s + x.amount, 0) / 7;
+      const trend = Math.round((new Date(`${dateText}T00:00:00`) - model.minDateObj) / 86400000);
+      const row = model.builder.build({
+        dow: meta.dow, temp, precip, pop, trend,
+        sinDoy: Math.sin((2 * Math.PI * doy) / 365.25), cosDoy: Math.cos((2 * Math.PI * doy) / 365.25),
+        lag7, roll7,
+      });
+      amount = Math.max(0, dot(row, model.beta));
+    }
+    const entry = { date: dateText, amount, temp, precip, pop, dow: meta.dow, closed, meta, weatherCode };
+    allDays.push(entry);
+    return entry;
+  }
+  const firstForecastDate = weatherForecastCache[0]?.date;
+  if (firstForecastDate) {
+    const cursor = new Date(`${allDays.at(-1).date}T00:00:00`);
+    cursor.setDate(cursor.getDate() + 1);
+    const firstForecastObj = new Date(`${firstForecastDate}T00:00:00`);
+    while (cursor < firstForecastObj) {
+      const dateText = cursor.toISOString().slice(0, 10);
+      const w = weatherByDate.get(dateText);
+      pushDay(dateText, w && w.temp_mean != null ? Number(w.temp_mean) : null, w ? Number(w.precipitation_mm || 0) : null, null);
+      cursor.setDate(cursor.getDate() + 1);
+    }
+  }
+  return weatherForecastCache.map((f) => {
+    const entry = pushDay(f.date, Number(f.temp), Number(f.precip), f.weatherCode);
+    return { ...entry, tempMax: Number(f.tempMax), tempMin: Number(f.tempMin) };
+  });
+}
+
+// 일~토 달력 모양으로 배열: 첫 예보일의 요일만큼 앞을 비우고 시작한다
+function renderWeatherCalendar(forecast) {
+  const headCells = weekdayLabel.map((label, i) => `<div class="weather-cal-head${i === 0 ? ' sun' : i === 6 ? ' sat' : ''}">${label}</div>`).join('');
+  const leading = forecast.length ? forecast[0].meta.dow : 0;
+  const emptyCells = Array.from({ length: leading }, () => '<div class="weather-cal-empty"></div>').join('');
+  const dayCells = forecast.map((f) => `<article class="weather-day forecast${f.meta.holiday ? ' is-holiday' : f.closed ? ' is-closed' : ''}">
+    <span class="weather-icon">${weatherIcon(f.weatherCode, f.precip)}</span>
+    <strong>${Number(f.date.slice(5, 7))}/${Number(f.date.slice(8, 10))}</strong>
+    <span>${f.tempMin.toFixed(0)}° / ${f.tempMax.toFixed(0)}°</span>
+    <small>${f.precip > 0 ? `비 ${f.precip.toFixed(1)}mm` : '강수 없음'}</small>
+    ${f.closed ? '<small class="weather-closed-tag">휴무</small>' : ''}
+  </article>`).join('');
+  const total = leading + forecast.length;
+  const trailing = total % 7 ? 7 - (total % 7) : 0;
+  const trailingCells = Array.from({ length: trailing }, () => '<div class="weather-cal-empty"></div>').join('');
+  return `<div class="weather-calendar">${headCells}${emptyCells}${dayCells}${trailingCells}</div>`;
 }
 
 function renderWeatherView() {
@@ -908,48 +1019,28 @@ function renderWeatherView() {
     legacySalesMonthSummary.hidden = true;
     return;
   }
-  const popModel = model.popModel;
-  const forecast = weatherForecastCache.map((f) => {
-    const meta = dateMeta(f.date);
-    const temp = Number(f.temp), precip = Number(f.precip);
-    const trend = Math.round((new Date(`${f.date}T00:00:00`) - model.minDateObj) / 86400000);
-    const pop = estimatePopulation(popModel, meta, temp, precip);
-    const feat = popModel ? [1, meta.isWeekend ? 1 : 0, meta.holiday ? 1 : 0, temp, precip, trend, pop / 1000]
-      : [1, meta.isWeekend ? 1 : 0, meta.holiday ? 1 : 0, temp, precip, trend];
-    return {
-      date: f.date, meta, temp, precip, pop, weatherCode: f.weatherCode,
-      tempMax: Number(f.tempMax), tempMin: Number(f.tempMin),
-      predicted: Math.max(0, dot(feat, model.beta)),
-    };
-  });
+  const forecast = forecastWeatherSales(model);
 
-  // 상단: 스마트폰 날씨앱 스타일 일별 예보 카드
   legacySalesChart.classList.add('weather-mode');
-  const dayCards = forecast.map((f) => `<article class="weather-day forecast${f.meta.holiday ? ' is-holiday' : f.meta.isWeekend ? ' is-weekend' : ''}">
-    <span class="weather-icon">${weatherIcon(f.weatherCode, f.precip)}</span>
-    <strong>${Number(f.date.slice(5, 7))}/${Number(f.date.slice(8, 10))} (${f.meta.weekday})</strong>
-    <span>${f.tempMin.toFixed(0)}° / ${f.tempMax.toFixed(0)}°</span>
-    <small>${f.precip > 0 ? `비 ${f.precip.toFixed(1)}mm` : '강수 없음'}</small>
-    <small>${won(f.predicted)}</small>
-  </article>`).join('');
-  const b = model.beta;
+  const b = model.beta, idx = model.builder.index;
   const effectCards = [
-    { label: '평일 대비 주말 효과', value: b[1] },
-    { label: '명절 효과', value: b[2] },
-    { label: '기온 1°C당 효과', value: b[3] },
-    { label: '강수 1mm당 효과', value: b[4] },
-    model.hasPop ? { label: '생활인구 1천명당 효과', value: b[6] } : null,
-    { label: '장기 추세(1일당)', value: b[5] },
+    { label: '기온 1°C당 효과', value: b[idx.temp] },
+    { label: '강수 1mm당 효과', value: b[idx.precip] },
+    model.hasPop ? { label: '생활인구 1천명당 효과', value: b[idx.pop] } : null,
+    { label: '전주 동요일 매출 1만원당', value: b[idx.lag7] },
+    { label: '최근 7일 평균매출 1만원당', value: b[idx.roll7] },
+    { label: '계절성 진폭(연중 최대 변동)', value: Math.sqrt(b[idx.sin] ** 2 + b[idx.cos] ** 2) },
   ].filter(Boolean).map((c) => `<article class="summary-card"><p>${c.label}</p><strong class="${c.value >= 0 ? 'kpi-delta up' : 'kpi-delta down'}">${c.value >= 0 ? '+' : ''}${won(c.value)}</strong></article>`).join('');
-  legacySalesChart.innerHTML = `<div class="weather-days">${dayCards}</div><div class="summary-grid weather-effect-grid">${effectCards}</div>`;
+  const weekdayNote = `토요일 기준 · 월 ${won(b[idx.mon])} · 화 ${won(b[idx.tue])} · 수 ${won(b[idx.wed])} · 목 ${won(b[idx.thu])} · 금 ${won(b[idx.fri])}`;
+  legacySalesChart.innerHTML = `${renderWeatherCalendar(forecast)}<div class="summary-grid weather-effect-grid">${effectCards}</div><p class="weather-weekday-note">요일별 효과(매출액 기준, 모델 계수) · ${weekdayNote}</p>`;
 
   setTableHead(['일자', '요일', '예상기온', '예상강수', '추정인구', '공휴일', '예측 매출액'], 6);
   setRows(forecast.map((f) => ({
-    cls: f.meta.holiday ? 'is-holiday' : f.meta.isWeekend ? 'is-weekend' : '',
+    cls: f.meta.holiday ? 'is-holiday' : f.closed ? 'is-closed' : '',
     cells: [
       f.date, f.meta.weekday, `${f.temp.toFixed(1)}°C`, `${f.precip.toFixed(1)}mm`,
       f.pop == null ? '—' : `${Math.round(f.pop).toLocaleString('ko-KR')}명`,
-      f.meta.holiday || '—', won(f.predicted),
+      f.meta.holiday || '—', f.closed ? '휴무' : won(f.amount),
     ],
   })), 6, null);
 
@@ -958,7 +1049,7 @@ function renderWeatherView() {
   const tempText = model.pearsonTemp == null ? '' : ` · 기온 상관 r=${model.pearsonTemp.toFixed(2)}`;
   const precipText = model.pearsonPrecip == null ? '' : ` · 강수 상관 r=${model.pearsonPrecip.toFixed(2)}`;
   const popText = model.pearsonPop == null ? ' · 생활인구 상관: 겹치는 기간 부족' : ` · 생활인구 상관 r=${model.pearsonPop.toFixed(2)} (실측 겹치는 ${model.popN}일 기준)`;
-  legacySalesMonthSummary.textContent = `학습 데이터 ${model.days.length}일(요일·명절·기온·강수·추정 생활인구 기반 회귀) · ${r2Text}${tempText}${precipText}${popText}`;
+  legacySalesMonthSummary.textContent = `영업일 ${model.trainRows.length}일 학습(일요일·공휴일 휴무 제외, 요일·기온·강수·생활인구·계절성·전주매출·최근7일평균 기반 회귀) · ${r2Text}${tempText}${precipText}${popText}`;
 }
 
 const legacySalesViewConfig = {
