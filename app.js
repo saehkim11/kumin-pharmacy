@@ -2080,6 +2080,17 @@ document.querySelector('#dashboardNewAppointment').addEventListener('click', () 
 // ---------- 데이터 백업(CSV 다운로드) ----------
 // 새 라이브러리 없이(xlsx 멀티시트 불가) 데이터 종류마다 CSV 파일을 따로 내려받는 방식.
 // 엑셀(Windows)에서 한글이 깨지지 않도록 UTF-8 BOM을 앞에 붙인다.
+// 저장된 연락처가 앞자리(010) 없이 숫자만 들어있는 경우가 많아, 보기 좋게 하이픈을 넣어준다.
+// 8자리면 010을 붙이고, 10자리면 맨 앞 0이 빠진 것으로 보고 채운다. 그 외 길이는 원래 숫자만 보여준다.
+function formatPhone(phone) {
+  if (!phone) return '';
+  const digits = String(phone).replace(/\D/g, '');
+  if (digits.length === 8) return `010-${digits.slice(0, 4)}-${digits.slice(4)}`;
+  if (digits.length === 10) return `0${digits.slice(0, 2)}-${digits.slice(2, 6)}-${digits.slice(6)}`;
+  if (digits.length === 11) return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+  return digits;
+}
+
 function toCsvCell(value) {
   if (value === null || value === undefined) return '';
   const text = String(value);
@@ -2144,7 +2155,7 @@ document.querySelector('#backupOwnersPets').addEventListener('click', (event) =>
     { label: '생년월일', get: (r) => r.birth_date },
     { label: '마지막방문일', get: (r) => r.last_visit_on },
     { label: '보호자명', get: (r) => r.owner?.name },
-    { label: '보호자연락처', get: (r) => r.owner?.phone },
+    { label: '보호자연락처', get: (r) => formatPhone(r.owner?.phone) },
   ], rows);
 }));
 
