@@ -126,6 +126,12 @@ const petSearchMessage = document.querySelector('#petSearchMessage');
 const petSearchHint = document.querySelector('#petSearchHint');
 const petCandidatesWrap = document.querySelector('#petCandidatesWrap');
 const petCandidateRows = document.querySelector('#petCandidateRows');
+const petShowAllButton = document.querySelector('#petShowAllButton');
+const petAllListWrap = document.querySelector('#petAllListWrap');
+const petAllListMessage = document.querySelector('#petAllListMessage');
+const petAllListTableWrap = document.querySelector('#petAllListTableWrap');
+const petAllListRows = document.querySelector('#petAllListRows');
+let petAllListLoaded = false;
 const petDetailPanel = document.querySelector('#petDetailPanel');
 const petDetailName = document.querySelector('#petDetailName');
 const petDetailInfo = document.querySelector('#petDetailInfo');
@@ -2104,6 +2110,50 @@ function preparePetSearch() {
   petSearchHint.hidden = true;
   petSearchMessage.textContent = '';
   newPetToggle.disabled = false;
+  petShowAllButton.disabled = false;
+  petShowAllButton.hidden = false;
+}
+
+async function togglePetAllList() {
+  const show = petAllListWrap.hidden;
+  petAllListWrap.hidden = !show;
+  petShowAllButton.textContent = show ? '전체보기 닫기' : '전체보기';
+  if (show && !petAllListLoaded) {
+    petAllListLoaded = true;
+    try {
+      const rows = await apiAll('pets?select=id,name,species,breed,last_visit_on,owner:owners(name)&order=name.asc');
+      renderPetAllList(rows);
+    } catch (error) {
+      petAllListLoaded = false;
+      petAllListMessage.hidden = false;
+      petAllListTableWrap.hidden = true;
+      petAllListMessage.textContent = '전체 목록을 불러오지 못했습니다.';
+    }
+  }
+}
+
+function renderPetAllList(pets) {
+  if (!pets.length) {
+    petAllListMessage.hidden = false;
+    petAllListTableWrap.hidden = true;
+    petAllListMessage.textContent = '등록된 반려동물이 없습니다.';
+    return;
+  }
+  petAllListMessage.hidden = true;
+  petAllListTableWrap.hidden = false;
+  petAllListRows.replaceChildren(...pets.map((pet) => {
+    const row = document.createElement('tr');
+    [pet.name, petSpeciesLabel[pet.species] || pet.species, pet.breed || '—', pet.last_visit_on || '—', pet.owner?.name || '—'].forEach((value) => {
+      const cell = document.createElement('td'); cell.textContent = value; row.append(cell);
+    });
+    const actionCell = document.createElement('td');
+    const button = document.createElement('button');
+    button.type = 'button'; button.className = 'pet-candidate-select'; button.textContent = '상세보기';
+    button.addEventListener('click', () => showPetDetail(pet.id));
+    actionCell.append(button);
+    row.append(actionCell);
+    return row;
+  }));
 }
 
 async function searchPets(name) {
@@ -2540,6 +2590,7 @@ loginButton.addEventListener('click', () => {
 document.querySelector('#closeLogin').addEventListener('click', () => loginDialog.close());
 petSearchButton.addEventListener('click', () => searchPets(petSearchInput.value));
 petSearchInput.addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); searchPets(petSearchInput.value); } });
+petShowAllButton.addEventListener('click', togglePetAllList);
 petMicButton.addEventListener('click', () => {
   if (!petRecognition) return;
   petMicButton.classList.add('listening');
