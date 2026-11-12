@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>pharmacy management</title>
-    <link rel="stylesheet" href="styles.css?v=20261112k" />
+    <link rel="stylesheet" href="styles.css?v=20261112l" />
   </head>
   <body>
     <div class="app-shell">
@@ -293,6 +293,17 @@
             <p class="empty-message">현재 코드에서 확인한 사실을 기준으로 정리했습니다. 수정 여부는 별도로 결정하시면 됩니다.</p>
             <div class="insight-list" id="structureInsights"></div>
           </section>
+          <section class="panel" id="dataBackupPanel">
+            <p class="eyebrow">DATA BACKUP · ADMIN ONLY</p><h2>데이터 백업</h2>
+            <p class="empty-message">버튼을 누르면 해당 데이터를 엑셀에서 바로 열 수 있는 파일(CSV)로 내려받습니다. 데이터 종류마다 파일이 따로 받아집니다.</p>
+            <div class="backup-buttons">
+              <button type="button" class="login-button" id="backupSales">매출 내역</button>
+              <button type="button" class="login-button" id="backupOwnersPets">고객·반려동물</button>
+              <button type="button" class="login-button" id="backupVisits">접종·방문 이력</button>
+              <button type="button" class="login-button" id="backupProducts">상품·재고</button>
+            </div>
+            <p class="form-message" id="backupMessage"></p>
+          </section>
         </section>
 
         <section class="view" id="tasks">
@@ -338,6 +349,6 @@
       <p class="form-message" id="newPetFormMessage"></p>
     </dialog>
     <script src="config.js"></script>
-    <script src="app.js?v=20261112k"></script>
+    <script src="app.js?v=20261112l"></script>
   </body>
 </html>

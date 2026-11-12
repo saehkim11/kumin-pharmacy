@@ -177,6 +177,7 @@ html[data-theme="dark"] .legacy-sales-view-tabs button{background:#111c2e;border
 .weather-closed-tag{color:#d6336c!important;font-weight:800}
 .sales-trend-chart{margin-top:20px;padding-top:18px;border-top:1px solid var(--line)}
 .dashboard-trend-chart{margin-top:4px;padding-top:0;border-top:0}
+.backup-buttons{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
 .sales-trend-chart svg{width:100%;height:auto;display:block}
 .trend-grid{stroke:var(--line);stroke-width:1}
 .trend-axis-label{fill:var(--muted);font-size:10px;font-variant-numeric:tabular-nums}

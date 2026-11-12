@@ -2077,6 +2077,99 @@ document.querySelector('#dashboardNewAppointment').addEventListener('click', () 
   document.querySelector('#newTaskTitle').focus();
 });
 
+// ---------- 데이터 백업(CSV 다운로드) ----------
+// 새 라이브러리 없이(xlsx 멀티시트 불가) 데이터 종류마다 CSV 파일을 따로 내려받는 방식.
+// 엑셀(Windows)에서 한글이 깨지지 않도록 UTF-8 BOM을 앞에 붙인다.
+function toCsvCell(value) {
+  if (value === null || value === undefined) return '';
+  const text = String(value);
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function downloadCsv(filename, headers, rows) {
+  const lines = [headers.map((h) => toCsvCell(h.label)).join(',')];
+  rows.forEach((row) => lines.push(headers.map((h) => toCsvCell(h.get(row))).join(',')));
+  const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function runBackup(button, build) {
+  const message = document.querySelector('#backupMessage');
+  button.disabled = true;
+  message.textContent = '내려받을 파일을 만드는 중...';
+  try {
+    await build();
+    message.textContent = '다운로드가 시작됐습니다. 브라우저 다운로드 폴더를 확인하세요.';
+  } catch (error) {
+    message.textContent = `백업 파일을 만들지 못했습니다: ${error.message}`;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+document.querySelector('#backupSales').addEventListener('click', (event) => runBackup(event.target, async () => {
+  const [legacy, saleItemRows] = await Promise.all([
+    apiAll('sales_legacy?select=sold_on,product_name_raw,quantity,unit_price,amount,margin_rate&order=sold_on.asc'),
+    apiAll('sale_items?select=quantity,unit_price,amount,products(name),sales(sold_at,status)&sales.status=eq.completed'),
+  ]);
+  const rows = [
+    ...legacy.map((r) => ({ date: r.sold_on, name: r.product_name_raw, quantity: r.quantity, unit_price: r.unit_price, amount: r.amount, margin: r.margin_rate == null ? '' : `${(Number(r.margin_rate) * 100).toFixed(1)}%` })),
+    ...saleItemRows.filter((r) => r.sales).map((r) => ({ date: r.sales.sold_at.slice(0, 10), name: r.products?.name || '—', quantity: r.quantity, unit_price: r.unit_price, amount: r.amount, margin: '' })),
+  ].sort((a, b) => a.date.localeCompare(b.date));
+  downloadCsv(`매출내역_${getLocalDate()}.csv`, [
+    { label: '일자', get: (r) => r.date },
+    { label: '상품명', get: (r) => r.name },
+    { label: '수량', get: (r) => r.quantity },
+    { label: '단가', get: (r) => r.unit_price },
+    { label: '금액', get: (r) => r.amount },
+    { label: '마진율', get: (r) => r.margin },
+  ], rows);
+}));
+
+document.querySelector('#backupOwnersPets').addEventListener('click', (event) => runBackup(event.target, async () => {
+  const rows = await apiAll('pets?select=name,species,breed,sex,neutered,birth_date,last_visit_on,owner:owners(name,phone)&order=name.asc');
+  downloadCsv(`고객_반려동물_${getLocalDate()}.csv`, [
+    { label: '반려동물명', get: (r) => r.name },
+    { label: '종류', get: (r) => petSpeciesLabel[r.species] || r.species },
+    { label: '품종', get: (r) => r.breed },
+    { label: '성별', get: (r) => petSexLabel[r.sex] || r.sex },
+    { label: '중성화', get: (r) => (r.neutered === null ? '' : r.neutered ? 'O' : 'X') },
+    { label: '생년월일', get: (r) => r.birth_date },
+    { label: '마지막방문일', get: (r) => r.last_visit_on },
+    { label: '보호자명', get: (r) => r.owner?.name },
+    { label: '보호자연락처', get: (r) => r.owner?.phone },
+  ], rows);
+}));
+
+document.querySelector('#backupVisits').addEventListener('click', (event) => runBackup(event.target, async () => {
+  const rows = await apiAll('pet_visits?select=visit_date,record,detail,pets(name,owner:owners(name))&order=visit_date.asc');
+  downloadCsv(`접종_방문이력_${getLocalDate()}.csv`, [
+    { label: '일자', get: (r) => r.visit_date },
+    { label: '반려동물명', get: (r) => r.pets?.name },
+    { label: '보호자명', get: (r) => r.pets?.owner?.name },
+    { label: '진료기록', get: (r) => r.record },
+    { label: '상세', get: (r) => r.detail },
+  ], rows);
+}));
+
+document.querySelector('#backupProducts').addEventListener('click', (event) => runBackup(event.target, async () => {
+  downloadCsv(`상품_재고_${getLocalDate()}.csv`, [
+    { label: '코드', get: (r) => r.code },
+    { label: '상품명', get: (r) => r.name },
+    { label: '분류', get: (r) => r.product_categories?.name },
+    { label: '판매가', get: (r) => r.sale_price },
+    { label: '매입가', get: (r) => r.product_costs?.[0]?.purchase_price },
+    { label: '현재재고', get: (r) => r.track_stock ? (r.product_stock?.[0]?.quantity ?? 0) : '' },
+  ], products);
+}));
+
 // 최근 30일 흐름을 날짜별로 더하되, 신규 판매 시스템(sales)에 그날 기록이 있으면 그걸 쓰고
 // 없으면(아직 과거 데이터라) sales_legacy 값을 쓴다. 두 표를 더해서 이중 집계되는 일이 없게 한다.
 function sumAmountByDate(salesRows, legacyRows) {
