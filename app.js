@@ -277,7 +277,8 @@ menuButtons.forEach((button) => {
 // 화면을 추가하거나 바꾸면 아래 목록도 같이 고쳐 주세요. insight 번호는 아래 siteInsights와 연결됩니다.
 const siteTreeData = {
   label: '약국 ERP', full: 'pharmacy management', access: 'all', note: '로그인 후 역할(admin, staff)에 따라 메뉴가 달라지는 약국 업무 사이트입니다.', children: [
-    { label: '대시보드', full: '대시보드', access: 'all', note: '오늘 매출 등 핵심 숫자와 매출 그래프를 한눈에 보는 첫 화면입니다.', children: [
+    { label: '대시보드', full: '대시보드', access: 'all', note: '오늘 일정·매출 등 핵심 정보를 한눈에 보는 첫 화면입니다.', children: [
+      { label: '오늘 일정', full: '오늘 일정(예약·업무)', access: 'all', note: '공유 업무 중 오늘 날짜인 것을 시간순으로 보여줍니다. 시간을 적어두면 예약처럼, 안 적으면 할 일로 보입니다.', data: ['action_tasks'] },
       { label: '요약 카드', full: '요약 카드 4개', access: 'all', note: '오늘 매출 · 판매 건수 · 재고 확인 필요 · 이번 달 마진율(admin 전용 지표)', data: ['sales', 'products', 'sale_items', 'v_sale_items_profit'], insight: 2 },
       { label: '매출 분석', full: '매출·상품 분석', access: 'admin', note: '연도별 월 매출 그래프와 분류별 전년 대비 증감. 월 버튼을 누르면 두 영역이 함께 바뀝니다.', data: ['sales', 'sale_items'], insight: 3 }
     ] },
@@ -1880,7 +1881,47 @@ document.querySelectorAll('.history-tab').forEach((tab) => tab.addEventListener(
   renderSalesHistory();
 }));
 
+const TASK_STATUS_LABEL = { todo: '할 일', doing: '진행 중', done: '완료', hold: '보류' };
+
+// 대시보드 맨 위 "오늘 일정": 공유 업무 중 오늘 날짜인 것을 시간순으로 보여준다(시간 없는 건 뒤로).
+// 시간이 적혀 있으면 사실상 예약(몇 시에 누가 오는지)이고, 없으면 그냥 오늘 할 일이다.
+function renderTodaySchedule() {
+  const list = document.querySelector('#todayScheduleList');
+  const empty = document.querySelector('#todayScheduleEmpty');
+  if (!list || !empty) return;
+  const today = getLocalDate();
+  const todays = tasks.filter((task) => task.due_date === today);
+  if (!todays.length) {
+    list.replaceChildren();
+    empty.hidden = false;
+    return;
+  }
+  empty.hidden = true;
+  const sorted = [...todays].sort((a, b) => {
+    if (a.scheduled_time && b.scheduled_time) return a.scheduled_time.localeCompare(b.scheduled_time);
+    if (a.scheduled_time) return -1;
+    if (b.scheduled_time) return 1;
+    return 0;
+  });
+  list.replaceChildren(...sorted.map((task) => {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = `today-schedule-row status-${task.status}`;
+    row.innerHTML = '<span class="today-schedule-time"></span><span class="today-schedule-title"></span><span class="today-schedule-badge"></span>';
+    row.querySelector('.today-schedule-time').textContent = task.scheduled_time ? task.scheduled_time.slice(0, 5) : '시간 미정';
+    row.querySelector('.today-schedule-title').textContent = task.title;
+    row.querySelector('.today-schedule-badge').textContent = TASK_STATUS_LABEL[task.status] || task.status;
+    row.addEventListener('click', () => {
+      const tasksNav = [...menuButtons].find((button) => button.dataset.view === 'tasks');
+      tasksNav?.click();
+      showTask(task);
+    });
+    return row;
+  }));
+}
+
 async function loadDashboard() {
+  renderTodaySchedule();
   let sales;
   try {
     sales = await apiAll('sales?select=sold_at,total_amount,status&status=eq.completed&order=sold_at.asc');
@@ -2282,7 +2323,7 @@ function makeCommentBubble(taskId) {
 }
 
 async function loadTasks() {
-  const response = await api('action_tasks?select=id,title,description,status,priority,due_date,created_by,created_at,task_assignees(user_id)&order=due_date.asc');
+  const response = await api('action_tasks?select=id,title,description,status,priority,due_date,scheduled_time,created_by,created_at,task_assignees(user_id)&order=due_date.asc');
   if (!response.ok) return;
   tasks = await response.json();
   try {
@@ -2313,7 +2354,7 @@ function renderCalendar() {
     const date = `${year}-${String(month + 1).padStart(2, '0')}-${String(index - first + 1).padStart(2, '0')}`;
     const dayTasks = tasks.filter((task) => task.due_date === date);
     day.innerHTML = `<time>${index - first + 1}</time>`;
-    dayTasks.slice(0, 2).forEach((task) => { const chip = document.createElement('span'); chip.className = `task-chip ${task.status}`; const bubble = makeCommentBubble(task.id); if (bubble) chip.append(bubble); chip.append(task.title); day.append(chip); });
+    dayTasks.slice(0, 2).forEach((task) => { const chip = document.createElement('span'); chip.className = `task-chip ${task.status}`; const bubble = makeCommentBubble(task.id); if (bubble) chip.append(bubble); chip.append(task.scheduled_time ? `${task.scheduled_time.slice(0, 5)} ${task.title}` : task.title); day.append(chip); });
     day.addEventListener('click', () => { if (dayTasks[0]) showTask(dayTasks[0]); });
     grid.append(day);
   }
@@ -2622,9 +2663,9 @@ document.addEventListener('click', (event) => {
 });
 document.querySelector('#previousMonth').addEventListener('click', () => { calendarDate.setMonth(calendarDate.getMonth() - 1); renderCalendar(); });
 document.querySelector('#nextMonth').addEventListener('click', () => { calendarDate.setMonth(calendarDate.getMonth() + 1); renderCalendar(); });
-document.querySelector('#saveTaskStatus').addEventListener('click', async () => { if (!selectedTask) return; const status = document.querySelector('#taskStatus').value; const response = await api(`action_tasks?id=eq.${selectedTask.id}`, { method: 'PATCH', body: JSON.stringify({ status }) }); if (response.ok) { selectedTask.status = status; await loadTasks(); } });
+document.querySelector('#saveTaskStatus').addEventListener('click', async () => { if (!selectedTask) return; const status = document.querySelector('#taskStatus').value; const response = await api(`action_tasks?id=eq.${selectedTask.id}`, { method: 'PATCH', body: JSON.stringify({ status }) }); if (response.ok) { selectedTask.status = status; await loadTasks(); renderTodaySchedule(); } });
 document.querySelector('#commentForm').addEventListener('submit', async (event) => { event.preventDefault(); if (!selectedTask) return; const body = document.querySelector('#commentBody').value.trim(); if (!body) return; const response = await api('task_comments', { method: 'POST', body: JSON.stringify({ task_id: selectedTask.id, body }) }); if (response.ok) { document.querySelector('#commentBody').value = ''; showTask(selectedTask); } });
-document.querySelector('#newTaskForm').addEventListener('submit', async (event) => { event.preventDefault(); const title = document.querySelector('#newTaskTitle').value.trim(); const assignee = document.querySelector('#newTaskAssignee').value; if (!title || !assignee) return; const response = await api('action_tasks', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ title, due_date: document.querySelector('#newTaskDueDate').value || null, priority: document.querySelector('#newTaskPriority').value }) }); if (response.ok) { const [task] = await response.json(); const assigned = await api('task_assignees', { method: 'POST', body: JSON.stringify({ task_id: task.id, user_id: assignee }) }); if (assigned.ok) { event.target.reset(); await loadTasks(); } } });
+document.querySelector('#newTaskForm').addEventListener('submit', async (event) => { event.preventDefault(); const title = document.querySelector('#newTaskTitle').value.trim(); const assignee = document.querySelector('#newTaskAssignee').value; if (!title || !assignee) return; const response = await api('action_tasks', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ title, due_date: document.querySelector('#newTaskDueDate').value || null, scheduled_time: document.querySelector('#newTaskTime').value || null, priority: document.querySelector('#newTaskPriority').value }) }); if (response.ok) { const [task] = await response.json(); const assigned = await api('task_assignees', { method: 'POST', body: JSON.stringify({ task_id: task.id, user_id: assignee }) }); if (assigned.ok) { event.target.reset(); await loadTasks(); await loadDashboard(); } } });
 
 document.querySelector('#loginForm').addEventListener('submit', async (event) => {
   event.preventDefault();
