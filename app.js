@@ -2488,6 +2488,10 @@ function renderPetCandidates(results) {
 async function showPetDetail(petId) {
   selectedPetId = petId;
   petSearchMessage.textContent = '불러오는 중...';
+  // 상세 화면이 바로 보이도록, 상세보기를 누른 목록(검색 결과·전체보기)은 접어둔다.
+  petCandidatesWrap.hidden = true;
+  petAllListWrap.hidden = true;
+  petShowAllButton.textContent = '전체보기';
   try {
     const [detailResponse, visitResponse, purchaseResponse] = await Promise.all([
       api('rpc/rpc_get_pet_detail', { method: 'POST', body: JSON.stringify({ p_pet_id: petId }) }),
@@ -2508,6 +2512,7 @@ async function showPetDetail(petId) {
 
 function renderPetDetail(detail, visits, purchases = []) {
   petDetailPanel.hidden = false;
+  petDetailPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
   petDetailName.textContent = `${detail.pet_name} (${petSpeciesLabel[detail.species] || detail.species}${detail.breed ? ' · ' + detail.breed : ''})`;
   const fields = [
     ['보호자', detail.owner_name || '—'],
