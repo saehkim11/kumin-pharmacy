@@ -480,6 +480,7 @@ const legacySalesRows = document.querySelector('#legacySalesRows');
 const legacySalesHead = document.querySelector('#legacySalesHead');
 const legacySalesEmpty = document.querySelector('#legacySalesEmpty');
 const legacySalesChart = document.querySelector('#legacySalesChart');
+const legacySalesChartAxis = document.querySelector('#legacySalesChartAxis');
 const legacySalesChartTitle = document.querySelector('#legacySalesChartTitle');
 const legacySalesChartLegend = document.querySelector('#legacySalesChartLegend');
 const legacySalesViewTabs = document.querySelector('#legacySalesViewTabs');
@@ -543,19 +544,25 @@ function shiftMonth(month, offset) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
-function setBarChart(items) {
+// 막대마다 숫자를 다 적으면 일자 라벨과 겹쳐 복잡해지므로, 왼쪽에 간단한 눈금(Y축)만 두고
+// 정확한 금액은 막대에 마우스를 올리면(title) 보이게 한다.
+function setBarChart(items, formatAxisValue = wonShort) {
   legacySalesChart.classList.remove('weather-mode');
+  legacySalesChartAxis.hidden = !items.length;
+  if (!items.length) { legacySalesChart.replaceChildren(); return; }
   const max = Math.max(...items.map((d) => Math.abs(d.amount)), 1);
+  legacySalesChartAxis.replaceChildren(...[max, max / 2, 0].map((value) => {
+    const tick = document.createElement('span');
+    tick.textContent = formatAxisValue(value);
+    return tick;
+  }));
   legacySalesChart.replaceChildren(...items.map(({ label, amount, title, cls }) => {
     const item = document.createElement('div');
     item.className = `bar-item${cls ? ' ' + cls : ''}`;
     if (title) item.title = title;
     const bar = document.createElement('i');
     bar.style.height = `${Math.max((Math.abs(amount) / max) * 100, amount !== 0 ? 3 : 0)}%`;
-    const value = document.createElement('span');
-    value.className = 'bar-value';
-    value.textContent = amount ? Math.round(amount / 1000).toLocaleString('ko-KR') : '';
-    item.append(bar, value, document.createTextNode(label));
+    item.append(bar, document.createTextNode(label));
     return item;
   }));
 }
@@ -687,7 +694,7 @@ function renderMarginView(rows) {
     byProduct.set(key, entry);
   });
   const list = [...byProduct.values()].map((e) => ({ ...e, avgMargin: (e.marginSum / e.marginCount) * 100 })).sort((a, b) => a.avgMargin - b.avgMargin);
-  setBarChart(list.slice(0, 12).map((e) => ({ label: e.name.length > 6 ? e.name.slice(0, 5) + '…' : e.name, amount: e.avgMargin, cls: e.avgMargin < 15 ? 'holiday' : e.avgMargin < 25 ? 'weekend' : '', title: `${e.name} · 평균마진율 ${e.avgMargin.toFixed(1)}%` })));
+  setBarChart(list.slice(0, 12).map((e) => ({ label: e.name.length > 6 ? e.name.slice(0, 5) + '…' : e.name, amount: e.avgMargin, cls: e.avgMargin < 15 ? 'holiday' : e.avgMargin < 25 ? 'weekend' : '', title: `${e.name} · 평균마진율 ${e.avgMargin.toFixed(1)}%` })), (v) => `${v.toFixed(0)}%`);
   setTableHead(['상품명', '매출액', '평균마진율'], 0);
   if (!list.length) { setRows([], 0, null); return; }
   const totalAmount = list.reduce((sum, e) => sum + e.amount, 0);
@@ -1134,7 +1141,7 @@ function renderSalesTrendChart(extended, model) {
 
 function renderWeatherView() {
   if (!weatherPopLoaded || !weatherForecastCache) {
-    legacySalesChart.classList.add('weather-mode');
+    legacySalesChart.classList.add('weather-mode'); legacySalesChartAxis.hidden = true;
     legacySalesChart.innerHTML = '<p class="weather-empty">날씨·생활인구 데이터와 예보를 불러오는 중입니다...</p>';
     setTableHead(['안내'], 0);
     setRows([{ cells: ['불러오는 중...'] }], 0, null);
@@ -1146,7 +1153,7 @@ function renderWeatherView() {
   }
   const model = buildWeatherModel();
   if (!model) {
-    legacySalesChart.classList.add('weather-mode');
+    legacySalesChart.classList.add('weather-mode'); legacySalesChartAxis.hidden = true;
     legacySalesChart.innerHTML = '<p class="weather-empty">학습에 쓸 수 있는 매출·날씨 데이터가 30일 이상 겹치지 않습니다.</p>';
     setTableHead(['안내'], 0);
     setRows([{ cells: ['데이터 부족'] }], 0, null);
@@ -1155,7 +1162,7 @@ function renderWeatherView() {
   }
   const { forecast, extended } = forecastWeatherSales(model);
 
-  legacySalesChart.classList.add('weather-mode');
+  legacySalesChart.classList.add('weather-mode'); legacySalesChartAxis.hidden = true;
   legacySalesChart.innerHTML = `${renderWeatherCalendar(forecast)}${renderSalesTrendChart(extended, model)}${renderForecastProductMix(forecast)}`;
 
   setTableHead(['일자', '요일', '예상기온', '예상강수', '추정인구', '공휴일', '예측 매출액'], 6);
