@@ -198,3 +198,12 @@ html[data-theme="dark"] .today-schedule-row{background:#172235}
 html[data-theme="dark"] .today-schedule-row:hover{background:#1d345d}
 html[data-theme="dark"] .today-schedule-badge{background:#0f1726}
 @media(max-width:560px){.today-schedule-row{grid-template-columns:64px 1fr auto;padding:12px}.today-schedule-time{font-size:15px}.today-schedule-title{font-size:14px}}
+
+/* 처음 방문하는 보호자·반려동물 등록: 처음 보는 사람도 바로 알아보게 눈에 띄는 배너+큰 버튼 */
+.pet-new-banner{display:flex;align-items:center;justify-content:space-between;gap:18px;margin:16px 0 20px;padding:18px 22px;border:1px solid #cfe0fb;border-radius:12px;background:var(--blue-soft)}
+.pet-new-banner strong{display:block;font-size:16px;color:var(--ink)}
+.pet-new-banner p{margin:4px 0 0;color:var(--muted);font-size:13px}
+.pet-new-cta{flex:none;height:48px;padding:0 22px;font-size:15px;font-weight:800;white-space:nowrap}
+.pet-new-cta:disabled{background:#d7dee9;color:#67748a}
+html[data-theme="dark"] .pet-new-banner{background:#1d345d;border-color:#2d4a86}
+@media(max-width:640px){.pet-new-banner{flex-direction:column;align-items:stretch;text-align:center}.pet-new-cta{width:100%}}

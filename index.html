@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>pharmacy management</title>
-    <link rel="stylesheet" href="styles.css?v=20261112a" />
+    <link rel="stylesheet" href="styles.css?v=20261112b" />
   </head>
   <body>
     <div class="app-shell">
@@ -115,11 +115,14 @@
           <section class="panel">
             <p class="eyebrow">CUSTOMER & PET LOOKUP</p><h2>고객·반려동물 관리</h2>
             <p class="empty-message" id="petSearchHint">로그인하면 반려동물 이름으로 검색할 수 있습니다.</p>
+            <div class="pet-new-banner">
+              <div><strong>처음 방문하는 보호자·반려동물이신가요?</strong><p>이름을 몰라도 여기서 바로 등록할 수 있습니다.</p></div>
+              <button class="login-button pet-new-cta" id="newPetToggle" type="button" disabled>+ 보호자·반려동물 등록</button>
+            </div>
             <div class="toolbar pet-search-toolbar">
               <div class="pet-search-field">
                 <div class="field-label-row">
                   <label for="petSearchInput">반려동물 이름</label>
-                  <button class="link-button" id="newPetToggle" type="button" disabled>+ 처음 방문하는 보호자·반려동물 등록</button>
                 </div>
                 <input id="petSearchInput" type="search" placeholder="이름을 입력하거나 마이크를 눌러 말하세요" autocomplete="off" disabled />
               </div>
