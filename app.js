@@ -2511,12 +2511,27 @@ async function showPetDetail(petId) {
 }
 
 // 날짜가 있는 방문·접종 이력과, 날짜 없이 메모로만 남은 옛 진료기록을 한 화면에 합쳐서
-// 의사 차트처럼 시간순으로 보여준다. 날짜 있는 기록이 하나라도 있으면 그것만 보여주고(내용이
-// 거의 항상 겹치므로 중복 표시를 피함), 날짜 있는 기록이 전혀 없을 때만 메모를 대신 보여준다.
+// 의사 차트처럼 시간순으로 보여준다. notes는 여러 방문이 이어붙은 메모라서 날짜 있는 기록과
+// 내용이 겹치는 줄은 빼고, 날짜 있는 기록에는 없는 줄만 "날짜 미상"으로 추가한다.
+// (전에는 날짜 있는 기록이 하나라도 있으면 메모 전체를 숨겨서, 접종처럼 날짜가 안 붙은
+// 기록이 통째로 안 보이는 문제가 있었다 — 2025-11 수정)
 function renderPetTimeline(visits, notes) {
-  const entries = visits.length
-    ? visits.map((v) => ({ date: v.visit_date, record: v.record, detail: v.detail }))
-    : (notes || '').split('|').map((line) => line.trim()).filter(Boolean).map((line) => ({ date: null, record: line, detail: null }));
+  const normalize = (s) => (s || '').replace(/[\s/]+/g, '');
+  // 한쪽이 다른 쪽을 포함해도, 거의 같은 길이일 때만 "중복"으로 본다 — 접종·몸무게처럼
+  // 방문 기록에 없는 내용이 메모 뒤에 덧붙은 경우(길이 차이가 큼)는 중복이 아니라 추가 정보다.
+  const isRedundant = (a, b) => {
+    if (!a || !b) return false;
+    const shorter = a.length <= b.length ? a : b;
+    const longer = a.length <= b.length ? b : a;
+    return longer.includes(shorter) && shorter.length / longer.length > 0.7;
+  };
+  const visitTexts = visits.map((v) => normalize(`${v.record || ''}${v.detail || ''}`)).filter(Boolean);
+  const dated = visits.map((v) => ({ date: v.visit_date, record: v.record, detail: v.detail }));
+  const noteLines = (notes || '').split('|').map((line) => line.trim()).filter(Boolean);
+  const extra = noteLines
+    .filter((line) => !visitTexts.some((vt) => isRedundant(vt, normalize(line))))
+    .map((line) => ({ date: null, record: line, detail: null }));
+  const entries = [...dated, ...extra];
 
   if (!entries.length) {
     petTimeline.replaceChildren();
