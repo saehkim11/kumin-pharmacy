@@ -4,7 +4,7 @@
 .env
 .env.*
 !.env.example
-config.js
+# config.js: GitHub Pages 무료 배포를 위해 public 저장소에 커밋함 (anon key만 포함, RLS로 보호)
 test-accounts.local.json
 *.secret
 service_role*
