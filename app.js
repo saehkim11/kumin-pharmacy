@@ -2068,6 +2068,15 @@ document.querySelector('#todayScheduleTabs').addEventListener('click', (event) =
   renderTodaySchedule();
 });
 
+document.querySelector('#dashboardNewAppointment').addEventListener('click', () => {
+  const tasksNav = [...menuButtons].find((button) => button.dataset.view === 'tasks');
+  tasksNav?.click();
+  const dueDate = document.querySelector('#newTaskDueDate');
+  if (!dueDate.value) dueDate.value = getLocalDate();
+  document.querySelector('#ownerTaskForm').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  document.querySelector('#newTaskTitle').focus();
+});
+
 // 최근 30일 흐름을 날짜별로 더하되, 신규 판매 시스템(sales)에 그날 기록이 있으면 그걸 쓰고
 // 없으면(아직 과거 데이터라) sales_legacy 값을 쓴다. 두 표를 더해서 이중 집계되는 일이 없게 한다.
 function sumAmountByDate(salesRows, legacyRows) {
@@ -2693,6 +2702,7 @@ async function completeLogin(session) {
     document.querySelector('[data-view="analytics"]').hidden = true;
   } else {
     document.querySelector('#ownerTaskForm').hidden = false;
+    document.querySelector('#dashboardNewAppointment').hidden = false;
     document.querySelector('#purchaseNav').hidden = false;
     document.querySelector('#structureNav').hidden = false;
     document.querySelector('#legacySalesNav').hidden = false;

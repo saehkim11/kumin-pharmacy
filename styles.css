@@ -215,6 +215,7 @@ html[data-theme="dark"] .legacy-sales-toolbar select,html[data-theme="dark"] .le
 .today-schedule-row.status-hold .today-schedule-badge{background:#f1f2f5;color:#67748a}
 .today-schedule-row.has-date{grid-template-columns:150px 1fr auto}.today-schedule-row.has-date .today-schedule-time{font-size:14px}
 .today-schedule-tabs{margin:4px 0 14px}
+#todaySchedulePanel .panel-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 html[data-theme="dark"] .today-schedule-row{background:#172235}
 html[data-theme="dark"] .today-schedule-row:hover{background:#1d345d}
 html[data-theme="dark"] .today-schedule-badge{background:#0f1726}
