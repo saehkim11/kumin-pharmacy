@@ -215,6 +215,8 @@ html[data-theme="dark"] .today-schedule-badge{background:#0f1726}
 
 /* 처음 방문하는 보호자·반려동물 등록: 처음 보는 사람도 바로 알아보게 눈에 띄는 배너+큰 버튼 */
 .pet-new-banner{display:flex;align-items:center;justify-content:space-between;gap:18px;margin:16px 0 20px;padding:18px 22px;border:1px solid #cfe0fb;border-radius:12px;background:var(--blue-soft)}
+.messaging-mock{margin-top:18px;padding:18px;border:1px dashed var(--line);border-radius:12px;background:var(--paper)}.messaging-mock-title{margin:0 0 12px;color:var(--muted);font-size:12px;font-weight:700}.messaging-mock-row{display:flex;align-items:center;gap:13px;padding:13px 0}.messaging-mock-row+.messaging-mock-row{border-top:1px solid var(--line)}.messaging-mock-row .summary-body{flex:1;min-width:0}.messaging-mock-row .summary-body strong{display:block;font-size:14px}.messaging-mock-row .summary-body span{display:block;margin-top:2px;color:var(--muted);font-size:12px}.messaging-mock-badge{flex:none;padding:5px 11px;border-radius:999px;background:var(--white);border:1px solid var(--line);color:var(--muted);font-size:12px;font-weight:700;white-space:nowrap}.messaging-mock-badge.done{background:#e5f6ee;color:#14734f;border-color:transparent}
+@media(max-width:560px){.messaging-mock-row{flex-wrap:wrap}.messaging-mock-badge{margin-left:55px}}
 .pet-new-banner strong{display:block;font-size:16px;color:var(--ink)}
 .pet-new-banner p{margin:4px 0 0;color:var(--muted);font-size:13px}
 .pet-new-cta{flex:none;height:48px;padding:0 22px;font-size:15px;font-weight:800;white-space:nowrap}

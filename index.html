@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>pharmacy management</title>
-    <link rel="stylesheet" href="styles.css?v=20261112c" />
+    <link rel="stylesheet" href="styles.css?v=20261112d" />
   </head>
   <body>
     <div class="app-shell">
@@ -22,6 +22,7 @@
           <button class="nav-button" data-view="tasks">공유 업무</button>
           <button class="nav-button" data-view="analytics">분석</button>
           <button class="nav-button" data-view="legacySales" id="legacySalesNav" hidden>매출관리</button>
+          <button class="nav-button" data-view="messaging" id="messagingNav" hidden>메시지 발송 (검토 중)</button>
           <button class="nav-button" data-view="structure" id="structureNav" hidden>사이트 구조</button>
         </nav>
         <p class="role-badge" id="roleBadge" aria-live="polite">현재 상태: 로그인 전</p>
@@ -235,6 +236,30 @@
           </section>
         </section>
 
+        <section class="view" id="messaging">
+          <section class="panel">
+            <p class="eyebrow">검토 중 · 아직 만들지 않음</p><h2>메시지 발송</h2>
+            <p class="empty-message">보호자에게 예방접종 안내, 예약 확인 같은 문자·카카오톡을 자동으로 보내는 기능입니다. 다른 동물병원 프로그램(OpenVPM)에서 보고 참고용으로 메뉴만 먼저 만들어 두었습니다. 아래는 화면이 생기면 이런 모습일 거라는 예시이고, 실제로 문자를 보내는 기능은 아직 없습니다.</p>
+            <div class="notice">
+              <strong>지금 당장은 만들지 않은 이유</strong>
+              <p>문자·카카오톡을 실제로 보내려면 외부 발송 업체(예: 카카오 비즈메시지, 알리고 등)에 별도로 가입하고, 보낼 때마다 비용이 듭니다. 발신 번호 등록 같은 준비도 필요해서, 꼭 필요하다고 결정되면 그때 별도로 진행하는 게 좋습니다.</p>
+            </div>
+            <div class="messaging-mock" aria-hidden="true">
+              <p class="messaging-mock-title">예시 화면 (실제로 동작하지 않음)</p>
+              <div class="messaging-mock-row">
+                <i class="summary-icon c-blue">💬</i>
+                <div class="summary-body"><strong>보리 (김현주)</strong><span>예방접종 안내 문자 · 내일 오전 10시 예약</span></div>
+                <span class="messaging-mock-badge wait">발송 대기</span>
+              </div>
+              <div class="messaging-mock-row">
+                <i class="summary-icon c-green">💬</i>
+                <div class="summary-body"><strong>초코 (홍고은)</strong><span>진료 후 안내 문자 · 다음 방문 추천일 안내</span></div>
+                <span class="messaging-mock-badge done">발송 완료</span>
+              </div>
+            </div>
+          </section>
+        </section>
+
         <section class="view" id="structure">
           <section class="panel">
             <p class="eyebrow">SITE MAP · ADMIN ONLY</p><h2>사이트 구조</h2>
@@ -291,6 +316,6 @@
       <p class="form-message" id="newPetFormMessage"></p>
     </dialog>
     <script src="config.js"></script>
-    <script src="app.js?v=20261112c"></script>
+    <script src="app.js?v=20261112d"></script>
   </body>
 </html>
