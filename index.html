@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>pharmacy management</title>
-    <link rel="stylesheet" href="styles.css?v=20261112h" />
+    <link rel="stylesheet" href="styles.css?v=20261112i" />
   </head>
   <body>
     <div class="app-shell">
@@ -53,6 +53,12 @@
             <article class="summary-card"><i class="summary-icon c-amber" aria-hidden="true">📦</i><div class="summary-body"><p>재고 확인 필요</p><strong>—</strong><span>데이터 연결 후 표시</span></div></article>
             <article class="summary-card"><i class="summary-icon c-purple" aria-hidden="true">📈</i><div class="summary-body"><p>이번 달 마진율</p><strong>—</strong><span>데이터 연결 후 표시</span></div></article>
           </div>
+
+          <section class="panel dashboard-trend" id="dashboardTrendPanel" hidden>
+            <div class="panel-heading"><div><p class="eyebrow">REVENUE TREND</p><h2>최근 30일 매출 추이</h2></div></div>
+            <div id="dashboardTrendChart"></div>
+            <p class="empty-message" id="dashboardTrendEmpty" hidden>표시할 매출 데이터가 없습니다.</p>
+          </section>
 
           <section class="dashboard-insights panel" id="dashboardInsights" hidden>
             <div class="panel-heading"><div><p class="eyebrow">BUSINESS OVERVIEW</p><h2>매출 · 상품 분석</h2></div></div>
@@ -327,6 +333,6 @@
       <p class="form-message" id="newPetFormMessage"></p>
     </dialog>
     <script src="config.js"></script>
-    <script src="app.js?v=20261112h"></script>
+    <script src="app.js?v=20261112i"></script>
   </body>
 </html>

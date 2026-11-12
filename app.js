@@ -481,6 +481,9 @@ const legacySalesHead = document.querySelector('#legacySalesHead');
 const legacySalesEmpty = document.querySelector('#legacySalesEmpty');
 const legacySalesChart = document.querySelector('#legacySalesChart');
 const legacySalesChartAxis = document.querySelector('#legacySalesChartAxis');
+const dashboardTrendPanel = document.querySelector('#dashboardTrendPanel');
+const dashboardTrendChart = document.querySelector('#dashboardTrendChart');
+const dashboardTrendEmpty = document.querySelector('#dashboardTrendEmpty');
 const legacySalesChartTitle = document.querySelector('#legacySalesChartTitle');
 const legacySalesChartLegend = document.querySelector('#legacySalesChartLegend');
 const legacySalesViewTabs = document.querySelector('#legacySalesViewTabs');
@@ -2036,8 +2039,90 @@ function renderTodaySchedule() {
   }));
 }
 
+// 최근 30일 흐름을 날짜별로 더하되, 신규 판매 시스템(sales)에 그날 기록이 있으면 그걸 쓰고
+// 없으면(아직 과거 데이터라) sales_legacy 값을 쓴다. 두 표를 더해서 이중 집계되는 일이 없게 한다.
+function sumAmountByDate(salesRows, legacyRows) {
+  const salesMap = new Map();
+  salesRows.forEach((row) => {
+    const date = row.sold_at.slice(0, 10);
+    salesMap.set(date, (salesMap.get(date) || 0) + Number(row.total_amount || 0));
+  });
+  const legacyMap = new Map();
+  legacyRows.forEach((row) => {
+    legacyMap.set(row.sold_on, (legacyMap.get(row.sold_on) || 0) + Number(row.amount || 0));
+  });
+  return (date) => (salesMap.has(date) ? salesMap.get(date) : (legacyMap.get(date) || 0));
+}
+
+async function loadDashboardTrend() {
+  if (currentProfile?.role !== 'admin') { dashboardTrendPanel.hidden = true; return; }
+  const today = getLocalDate();
+  const start = addDays(today, -29);
+  const lastYearStart = sameDayPreviousYear(start);
+  const lastYearEnd = sameDayPreviousYear(today);
+  try {
+    const [recentSales, recentLegacy, lastYearSales, lastYearLegacy] = await Promise.all([
+      apiAll(`sales?select=sold_at,total_amount&status=eq.completed&sold_at=gte.${start}`),
+      apiAll(`sales_legacy?select=sold_on,amount&sold_on=gte.${start}`),
+      apiAll(`sales?select=sold_at,total_amount&status=eq.completed&sold_at=gte.${lastYearStart}&sold_at=lte.${lastYearEnd}`),
+      apiAll(`sales_legacy?select=sold_on,amount&sold_on=gte.${lastYearStart}&sold_on=lte.${lastYearEnd}`),
+    ]);
+    const recentOf = sumAmountByDate(recentSales, recentLegacy);
+    const lastYearOf = sumAmountByDate(lastYearSales, lastYearLegacy);
+    const points = [];
+    for (let i = 0; i < 30; i += 1) {
+      const date = addDays(start, i);
+      points.push({ date, current: recentOf(date), lastYear: lastYearOf(sameDayPreviousYear(date)) });
+    }
+    if (!points.some((p) => p.current || p.lastYear)) {
+      dashboardTrendPanel.hidden = false;
+      dashboardTrendChart.replaceChildren();
+      dashboardTrendEmpty.hidden = false;
+      return;
+    }
+    dashboardTrendPanel.hidden = false;
+    dashboardTrendEmpty.hidden = true;
+    dashboardTrendChart.innerHTML = renderDashboardTrendChart(points);
+  } catch (error) {
+    dashboardTrendPanel.hidden = true;
+  }
+}
+
+function renderDashboardTrendChart(points) {
+  const W = 820, H = 220, padL = 60, padR = 14, padT = 16, padB = 28;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const yMax = Math.max(...points.map((p) => Math.max(p.current, p.lastYear)), 10000) * 1.1;
+  const x = (i) => padL + (i * plotW) / Math.max(points.length - 1, 1);
+  const y = (v) => padT + plotH - (Math.min(v, yMax) / yMax) * plotH;
+
+  const gridLines = [0, 0.5, 1].map((f) => {
+    const v = yMax * f;
+    return `<line x1="${padL}" y1="${y(v).toFixed(1)}" x2="${W - padR}" y2="${y(v).toFixed(1)}" class="trend-grid" />
+      <text x="${padL - 8}" y="${(y(v) + 4).toFixed(1)}" class="trend-axis-label" text-anchor="end">${wonShort(v)}</text>`;
+  }).join('');
+
+  const pathFor = (key) => points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${x(i).toFixed(1)} ${y(p[key]).toFixed(1)}`).join(' ');
+  const labelEvery = Math.ceil(points.length / 7);
+  const xLabels = points.map((p, i) => (i % labelEvery === 0 || i === points.length - 1)
+    ? `<text x="${x(i).toFixed(1)}" y="${H - 6}" class="trend-axis-label" text-anchor="middle">${Number(p.date.slice(5, 7))}/${Number(p.date.slice(8, 10))}</text>` : '').join('');
+
+  return `<div class="sales-trend-chart dashboard-trend-chart">
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="최근 30일과 작년 같은 기간 매출 비교">
+      ${gridLines}
+      <path d="${pathFor('lastYear')}" class="trend-line-predicted" />
+      <path d="${pathFor('current')}" class="trend-line-actual" />
+      ${xLabels}
+    </svg>
+    <div class="trend-legend">
+      <span><i class="trend-swatch actual"></i>최근 30일</span>
+      <span><i class="trend-swatch predicted"></i>작년 같은 기간(점선)</span>
+    </div>
+  </div>`;
+}
+
 async function loadDashboard() {
   renderTodaySchedule();
+  loadDashboardTrend();
   let sales;
   try {
     sales = await apiAll('sales?select=sold_at,total_amount,status&status=eq.completed&order=sold_at.asc');
