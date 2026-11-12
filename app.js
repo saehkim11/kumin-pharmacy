@@ -1048,8 +1048,8 @@ function renderForecastProductMix(forecast) {
     <strong>${item.share.toFixed(1)}%</strong>
   </div>`).join('');
   return `<div class="forecast-mix">
-    <h4>${mix.monthLabel}에 실제로 많이 팔렸던 상품${mix.tick ? ' (진드기 예방 성수기 포함)' : ''}</h4>
-    <p class="forecast-mix-note">예측 매출액은 하루 합계 금액만 계산합니다. 아래는 과거 ${mix.monthLabel} 실제 판매 데이터에서 매출 비중이 컸던 상품이며, 이번 예측이 반드시 이 상품들로 채워진다는 뜻은 아닙니다.</p>
+    <h4>과년도 ${mix.monthLabel}에 실제로 많이 팔렸던 상품${mix.tick ? ' (진드기 예방 성수기 포함)' : ''}</h4>
+    <p class="forecast-mix-note">예측 매출액은 하루 합계 금액만 계산합니다. 아래는 과년도 ${mix.monthLabel} 실제 판매 데이터를 모두 합쳐서 매출 비중이 컸던 상품이며, 이번 예측이 반드시 이 상품들로 채워진다는 뜻은 아닙니다.</p>
     <div class="forecast-mix-rows">${rows}</div>
   </div>`;
 }
