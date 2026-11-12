@@ -2510,11 +2510,20 @@ async function showPetDetail(petId) {
   }
 }
 
+// 접종·구충제처럼 "접종기록" 칸에 넣을 만한 항목을 가려내는 키워드.
+// 완벽한 분류는 아니고(원본 데이터에 구분 칼럼이 없음), 많이 쓰이는 접종·구충 제품명 기준.
+const VACCINE_KEYWORDS = [
+  '백신', '접종', '넥스가드', '브라벡토', '하트가드', '프론트라인', '레볼루션', '애드보킷',
+  '심장사상충', '구충', '광견', '래비신', '종합', '코로나', '파보', '켄넬코프', '하트프론',
+  '노비박', '리컴비텍', '심페리카', '크레델리오', '플루도기', '하트캅', '하트원',
+];
+function isVaccineText(text) {
+  return VACCINE_KEYWORDS.some((kw) => text.includes(kw));
+}
+
 // 날짜가 있는 방문·접종 이력과, 날짜 없이 메모로만 남은 옛 진료기록을 한 화면에 합쳐서
-// 의사 차트처럼 시간순으로 보여준다. notes는 여러 방문이 이어붙은 메모라서 날짜 있는 기록과
-// 내용이 겹치는 줄은 빼고, 날짜 있는 기록에는 없는 줄만 "날짜 미상"으로 추가한다.
-// (전에는 날짜 있는 기록이 하나라도 있으면 메모 전체를 숨겨서, 접종처럼 날짜가 안 붙은
-// 기록이 통째로 안 보이는 문제가 있었다 — 2025-11 수정)
+// 날짜별로 진료기록/접종기록 두 칸에 나눠 담은 표로 보여준다. notes는 여러 방문이 이어붙은
+// 메모라서 날짜 있는 기록과 내용이 겹치는 줄은 빼고, 없는 줄만 "날짜 미상"으로 추가한다.
 function renderPetTimeline(visits, notes) {
   const normalize = (s) => (s || '').replace(/[\s/]+/g, '');
   // 한쪽이 다른 쪽을 포함해도, 거의 같은 길이일 때만 "중복"으로 본다 — 접종·몸무게처럼
@@ -2526,12 +2535,12 @@ function renderPetTimeline(visits, notes) {
     return longer.includes(shorter) && shorter.length / longer.length > 0.7;
   };
   const visitTexts = visits.map((v) => normalize(`${v.record || ''}${v.detail || ''}`)).filter(Boolean);
-  const dated = visits.map((v) => ({ date: v.visit_date, record: v.record, detail: v.detail }));
+  const dated = visits.map((v) => ({ date: v.visit_date, text: [v.record, v.detail].filter(Boolean).join(' / ') }));
   const noteLines = (notes || '').split('|').map((line) => line.trim()).filter(Boolean);
   const extra = noteLines
     .filter((line) => !visitTexts.some((vt) => isRedundant(vt, normalize(line))))
-    .map((line) => ({ date: null, record: line, detail: null }));
-  const entries = [...dated, ...extra];
+    .map((line) => ({ date: null, text: line }));
+  const entries = [...dated, ...extra].filter((e) => e.text);
 
   if (!entries.length) {
     petTimeline.replaceChildren();
@@ -2539,26 +2548,34 @@ function renderPetTimeline(visits, notes) {
     return;
   }
   petTimelineEmpty.hidden = true;
-  petTimeline.replaceChildren(...entries.map((entry) => {
-    const item = document.createElement('div');
-    item.className = 'pet-timeline-item';
-    const dateTag = document.createElement('div');
-    dateTag.className = 'pet-timeline-date';
-    dateTag.textContent = entry.date || '날짜 미상';
-    const body = document.createElement('div');
-    body.className = 'pet-timeline-body';
-    const recordEl = document.createElement('p');
-    recordEl.className = 'pet-timeline-record';
-    recordEl.textContent = entry.record || entry.detail || '기록 없음';
-    body.append(recordEl);
-    if (entry.detail && entry.record) {
-      const detailEl = document.createElement('p');
-      detailEl.className = 'pet-timeline-detail';
-      detailEl.textContent = entry.detail;
-      body.append(detailEl);
-    }
-    item.append(dateTag, body);
-    return item;
+
+  // 같은 날짜(또는 날짜 미상)의 기록을 한 행으로 모으고, 진료/접종 칸으로 나눠 담는다.
+  const rowOf = new Map();
+  entries.forEach((entry) => {
+    const key = entry.date || '';
+    if (!rowOf.has(key)) rowOf.set(key, { date: entry.date, treatment: [], vaccine: [] });
+    const row = rowOf.get(key);
+    (isVaccineText(entry.text) ? row.vaccine : row.treatment).push(entry.text);
+  });
+  const rows = [...rowOf.values()].sort((a, b) => {
+    if (!a.date && !b.date) return 0;
+    if (!a.date) return 1;
+    if (!b.date) return -1;
+    return b.date.localeCompare(a.date);
+  });
+
+  petTimeline.replaceChildren(...rows.map((row) => {
+    const tr = document.createElement('tr');
+    const dateCell = document.createElement('td');
+    dateCell.textContent = row.date || '날짜 미상';
+    const treatmentCell = document.createElement('td');
+    treatmentCell.textContent = row.treatment.join(' · ') || '—';
+    if (!row.treatment.length) treatmentCell.classList.add('is-empty');
+    const vaccineCell = document.createElement('td');
+    vaccineCell.textContent = row.vaccine.join(' · ') || '—';
+    if (!row.vaccine.length) vaccineCell.classList.add('is-empty');
+    tr.append(dateCell, treatmentCell, vaccineCell);
+    return tr;
   }));
 }
 

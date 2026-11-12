@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>pharmacy management</title>
-    <link rel="stylesheet" href="styles.css?v=20261113a" />
+    <link rel="stylesheet" href="styles.css?v=20261113b" />
   </head>
   <body>
     <div class="app-shell">
@@ -157,8 +157,10 @@
               <h3 id="petDetailName"></h3>
               <div class="pet-detail-grid" id="petDetailInfo"></div>
               <section class="pet-detail-block">
-                <h4>진료 기록 (최근 순)</h4>
-                <div class="pet-timeline" id="petTimeline"></div>
+                <h4>진료·접종 기록 (최근 순)</h4>
+                <div class="table-wrap pet-timeline-table-wrap">
+                  <table><thead><tr><th>일자</th><th>진료기록</th><th>접종기록</th></tr></thead><tbody id="petTimeline"></tbody></table>
+                </div>
                 <p class="empty-message" id="petTimelineEmpty" hidden>진료 기록이 없습니다.</p>
               </section>
               <h4>새 접종·방문 등록</h4>
@@ -349,6 +351,6 @@
       <p class="form-message" id="newPetFormMessage"></p>
     </dialog>
     <script src="config.js"></script>
-    <script src="app.js?v=20261113d"></script>
+    <script src="app.js?v=20261113e"></script>
   </body>
 </html>
