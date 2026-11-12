@@ -1,5 +1,12 @@
 """접종관리 시트 -> pet_visits INSERT SQL 생성기 (날짜별 방문 기록 그대로 보존).
-owners/pets는 이미 DB에 있다고 가정하고, owner.name + pet.name으로 매칭해 pet_id를 찾는다.
+
+owners/pets는 import_pets.py로 먼저 만든다고 가정한다. pet_id를 찾을 때 이름으로
+조인하지 않고, import_pets.py와 완전히 같은 순서·정규화 규칙으로 owners/pets를 다시
+만들어서(결정론적이라 항상 같은 순서가 나옴) 이미 DB에 들어간 pets.id와 같은 번호를
+그대로 얻는다. 이렇게 해야 "미기재" 같은 중복 이름이 많아도 정확한 반려동물에만 연결된다.
+(이전 버전은 이름으로 조인해서, 견주·동물이름이 비어 '미기재'로 들어간 행 전체를
+ 건너뛰었다 — 원본에는 날짜가 있는데도 날짜가 사라지는 문제가 있었다. 2025-11 수정.)
+
 실제 데이터는 data/real/ 입력, 결과도 data/real/ (Git 제외). 대화/로그에 개인정보 출력 금지.
 
 사용법:
@@ -10,19 +17,10 @@ import argparse
 import datetime
 import sys
 
-import openpyxl
+sys.path.insert(0, "tools")
+import import_pets as ip  # noqa: E402
 
-XLSX_PATH = "data/real/판매관리 3 2025_수정_v2_요일별.xlsx"
-SHEET = "접종관리"
-HEADER_ROW = 2
 OUT_SQL = "data/real/import_pet_visits.sql"
-
-
-def norm_name(v) -> str:
-    if v is None:
-        return ""
-    import re
-    return re.sub(r"\s+", "", str(v)).strip()
 
 
 def sql_str(v):
@@ -31,35 +29,27 @@ def sql_str(v):
     return "'" + str(v).replace("'", "''") + "'"
 
 
-def load_rows():
-    wb = openpyxl.load_workbook(XLSX_PATH, read_only=True, data_only=True)
-    ws = wb[SHEET]
-    rows = ws.iter_rows(min_row=1, max_row=ws.max_row, values_only=True)
-    for _ in range(HEADER_ROW):
-        header = next(rows)
-    idx = {name: i for i, name in enumerate(header) if name}
-    for r in rows:
-        def g(col):
-            i = idx.get(col)
-            return r[i] if i is not None and i < len(r) else None
-        yield {
-            "date": g("날짜"), "owner": g("견주"), "pet": g("강아지이름"),
-            "record": g("진료기록"), "detail": g("상세"),
-        }
+def build_visits():
+    # import_pets.py와 동일한 순서로 재구성해야 같은 pets.id가 나온다.
+    owners, pets, _stats = ip.build(ip.load_rows())
+    pet_id_of = {key: i for i, key in enumerate(pets.keys(), start=1)}
 
-
-def build_visits(rows):
     visits = []
-    skipped = 0
-    for row in rows:
+    skipped_both_blank = 0
+    skipped_no_record = 0
+    skipped_no_date = 0
+    unmatched = 0
+
+    for row_idx, row in enumerate(ip.load_rows()):
         owner_raw = row["owner"]
         pet_raw = row["pet"]
         owner_blank = not owner_raw or not str(owner_raw).strip()
         pet_blank = not pet_raw or not str(pet_raw).strip()
-        if owner_blank or pet_blank:
-            skipped += 1
+        if owner_blank and pet_blank:
+            skipped_both_blank += 1
             continue
         if not row["record"] and not row["detail"]:
+            skipped_no_record += 1
             continue
 
         visit_date = row["date"]
@@ -67,15 +57,34 @@ def build_visits(rows):
             visit_date = visit_date.date()
         elif not isinstance(visit_date, datetime.date):
             visit_date = None
+        if visit_date is None:
+            skipped_no_date += 1
+            continue
+
+        phone = ip.norm_phone(row["phone"])
+        if owner_blank:
+            owner_key = ("미기재", phone) if phone else ("미기재", f"__row{row_idx}")
+        else:
+            owner_key = (ip.norm_name(owner_raw), phone)
+        pet_name_n = ip.norm_name(pet_raw) if not pet_blank else "미기재"
+        pet_key = (owner_key, pet_name_n)
+        pid = pet_id_of.get(pet_key)
+        if pid is None:
+            unmatched += 1
+            continue
 
         visits.append({
-            "owner_name": str(owner_raw).strip(),
-            "pet_name": str(pet_raw).strip(),
-            "visit_date": visit_date,
+            "pet_id": pid, "visit_date": visit_date,
             "record": str(row["record"]).strip() if row["record"] else None,
             "detail": str(row["detail"]).strip() if row["detail"] else None,
         })
-    return visits, skipped
+
+    return visits, {
+        "skipped_both_blank": skipped_both_blank,
+        "skipped_no_record": skipped_no_record,
+        "skipped_no_date": skipped_no_date,
+        "unmatched": unmatched,
+    }
 
 
 def main():
@@ -83,32 +92,26 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
-    visits, skipped = build_visits(load_rows())
+    visits, stats = build_visits()
     print("=== 가져오기 요약 (개인정보 미포함) ===")
     print(f"방문 기록 수: {len(visits)}")
-    print(f"보호자/반려동물 이름 비어 있어 제외: {skipped}")
+    print(f"견주·동물이름 둘 다 없어서 애초에 반려동물이 없는 행(복구 불가): {stats['skipped_both_blank']}")
+    print(f"진료기록·상세 둘 다 없어서 제외: {stats['skipped_no_record']}")
+    print(f"날짜 파싱 안 돼서 제외: {stats['skipped_no_date']}")
+    print(f"대응되는 반려동물을 못 찾은 행(이상 있으면 0이어야 함): {stats['unmatched']}")
 
     if args.dry_run:
         return
+    if stats["unmatched"]:
+        print("[중단] 매칭 안 된 행이 있어 SQL을 만들지 않았습니다. owners/pets를 먼저 최신으로 가져왔는지 확인하세요.", file=sys.stderr)
+        sys.exit(1)
 
-    lines = ["begin;", "",
-             "create temporary table pet_visit_staging (",
-             "  owner_name text, pet_name text, visit_date date, record text, detail text",
-             ");", ""]
+    lines = ["begin;", ""]
     for v in visits:
         lines.append(
-            "insert into pet_visit_staging (owner_name, pet_name, visit_date, record, detail) values "
-            f"({sql_str(v['owner_name'])}, {sql_str(v['pet_name'])}, {sql_str(v['visit_date'].isoformat() if v['visit_date'] else None)}, "
-            f"{sql_str(v['record'])}, {sql_str(v['detail'])});"
+            "insert into public.pet_visits (pet_id, visit_date, record, detail) values "
+            f"({v['pet_id']}, {sql_str(v['visit_date'].isoformat())}, {sql_str(v['record'])}, {sql_str(v['detail'])});"
         )
-    lines.append("")
-    lines.append(
-        "insert into public.pet_visits (pet_id, visit_date, record, detail) "
-        "select p.id, s.visit_date, s.record, s.detail "
-        "from pet_visit_staging s "
-        "join public.owners o on o.name = s.owner_name "
-        "join public.pets p on p.owner_id = o.id and p.name = s.pet_name;"
-    )
     lines.append("")
     lines.append("commit;")
 

@@ -134,9 +134,8 @@ const petAllListRows = document.querySelector('#petAllListRows');
 const petDetailPanel = document.querySelector('#petDetailPanel');
 const petDetailName = document.querySelector('#petDetailName');
 const petDetailInfo = document.querySelector('#petDetailInfo');
-const petDetailNotes = document.querySelector('#petDetailNotes');
-const petVisitRows = document.querySelector('#petVisitRows');
-const petVisitEmpty = document.querySelector('#petVisitEmpty');
+const petTimeline = document.querySelector('#petTimeline');
+const petTimelineEmpty = document.querySelector('#petTimelineEmpty');
 const petSpeciesLabel = { dog: '강아지', cat: '고양이', unknown: '미상' };
 const petSexLabel = { male: '수컷', female: '암컷', unknown: '미상' };
 const petVisitForm = document.querySelector('#petVisitForm');
@@ -2510,6 +2509,43 @@ async function showPetDetail(petId) {
   }
 }
 
+// 날짜가 있는 방문·접종 이력과, 날짜 없이 메모로만 남은 옛 진료기록을 한 화면에 합쳐서
+// 의사 차트처럼 시간순으로 보여준다. 날짜 있는 기록이 하나라도 있으면 그것만 보여주고(내용이
+// 거의 항상 겹치므로 중복 표시를 피함), 날짜 있는 기록이 전혀 없을 때만 메모를 대신 보여준다.
+function renderPetTimeline(visits, notes) {
+  const entries = visits.length
+    ? visits.map((v) => ({ date: v.visit_date, record: v.record, detail: v.detail }))
+    : (notes || '').split('|').map((line) => line.trim()).filter(Boolean).map((line) => ({ date: null, record: line, detail: null }));
+
+  if (!entries.length) {
+    petTimeline.replaceChildren();
+    petTimelineEmpty.hidden = false;
+    return;
+  }
+  petTimelineEmpty.hidden = true;
+  petTimeline.replaceChildren(...entries.map((entry) => {
+    const item = document.createElement('div');
+    item.className = 'pet-timeline-item';
+    const dateTag = document.createElement('div');
+    dateTag.className = 'pet-timeline-date';
+    dateTag.textContent = entry.date || '날짜 미상';
+    const body = document.createElement('div');
+    body.className = 'pet-timeline-body';
+    const recordEl = document.createElement('p');
+    recordEl.className = 'pet-timeline-record';
+    recordEl.textContent = entry.record || entry.detail || '기록 없음';
+    body.append(recordEl);
+    if (entry.detail && entry.record) {
+      const detailEl = document.createElement('p');
+      detailEl.className = 'pet-timeline-detail';
+      detailEl.textContent = entry.detail;
+      body.append(detailEl);
+    }
+    item.append(dateTag, body);
+    return item;
+  }));
+}
+
 function renderPetDetail(detail, visits, purchases = []) {
   petDetailPanel.hidden = false;
   petDetailPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -2530,29 +2566,7 @@ function renderPetDetail(detail, visits, purchases = []) {
     div.append(labelSpan, valueTag);
     return div;
   }));
-  // notes는 여러 방문 기록이 " | "로 이어붙은 메모라서, 한 줄씩 끊어 보여주면 훨씬 읽기 쉽다.
-  if (detail.notes) {
-    petDetailNotes.replaceChildren(...detail.notes.split('|').map((line) => line.trim()).filter(Boolean).map((line) => {
-      const p = document.createElement('p');
-      p.textContent = line;
-      return p;
-    }));
-  } else {
-    petDetailNotes.textContent = '기록된 진료기록이 없습니다.';
-  }
-  if (!visits.length) {
-    petVisitRows.replaceChildren();
-    petVisitEmpty.hidden = false;
-  } else {
-    petVisitEmpty.hidden = true;
-    petVisitRows.replaceChildren(...visits.map((visit) => {
-      const row = document.createElement('tr');
-      [visit.visit_date, visit.record || '—', visit.detail || '—'].forEach((value) => {
-        const cell = document.createElement('td'); cell.textContent = value ?? '—'; row.append(cell);
-      });
-      return row;
-    }));
-  }
+  renderPetTimeline(visits, detail.notes);
   petVisitDate.value = getLocalDate();
   petVisitRecord.value = '';
   petVisitDetail.value = '';
