@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>pharmacy management</title>
-    <link rel="stylesheet" href="styles.css?v=20261112i" />
+    <link rel="stylesheet" href="styles.css?v=20261112j" />
   </head>
   <body>
     <div class="app-shell">
@@ -43,9 +43,14 @@
 
         <section class="view active" id="dashboard" aria-labelledby="pageTitle">
           <section class="panel today-schedule" id="todaySchedulePanel">
-            <div class="panel-heading"><div><p class="eyebrow">TODAY</p><h2 id="todayScheduleTitle">오늘 일정</h2></div></div>
+            <div class="panel-heading"><div><p class="eyebrow">SCHEDULE</p><h2 id="todayScheduleTitle">오늘 일정</h2></div></div>
+            <div class="legacy-sales-view-tabs today-schedule-tabs" id="todayScheduleTabs">
+              <button type="button" class="active" data-range="today">오늘</button>
+              <button type="button" data-range="tomorrow">내일</button>
+              <button type="button" data-range="week">이번주</button>
+            </div>
             <div id="todayScheduleList"></div>
-            <p class="empty-message" id="todayScheduleEmpty" hidden>오늘 등록된 예약·업무가 없습니다.</p>
+            <p class="empty-message" id="todayScheduleEmpty" hidden>등록된 예약·업무가 없습니다.</p>
           </section>
           <div class="summary-grid" aria-label="요약 정보">
             <article class="summary-card"><i class="summary-icon c-blue" aria-hidden="true">💰</i><div class="summary-body"><p>오늘 매출</p><strong>—</strong><span>데이터 연결 후 표시</span></div></article>
@@ -333,6 +338,6 @@
       <p class="form-message" id="newPetFormMessage"></p>
     </dialog>
     <script src="config.js"></script>
-    <script src="app.js?v=20261112i"></script>
+    <script src="app.js?v=20261112j"></script>
   </body>
 </html>

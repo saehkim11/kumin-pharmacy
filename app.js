@@ -2004,19 +2004,40 @@ const TASK_STATUS_LABEL = { todo: '할 일', doing: '진행 중', done: '완료'
 
 // 대시보드 맨 위 "오늘 일정": 공유 업무 중 오늘 날짜인 것을 시간순으로 보여준다(시간 없는 건 뒤로).
 // 시간이 적혀 있으면 사실상 예약(몇 시에 누가 오는지)이고, 없으면 그냥 오늘 할 일이다.
+let todayScheduleRange = 'today'; // 'today' | 'tomorrow' | 'week'
+const TODAY_SCHEDULE_TITLE = { today: '오늘 일정', tomorrow: '내일 일정', week: '이번주 일정' };
+const TODAY_SCHEDULE_EMPTY = { today: '오늘 등록된 예약·업무가 없습니다.', tomorrow: '내일 등록된 예약·업무가 없습니다.', week: '이번주 등록된 예약·업무가 없습니다.' };
+
 function renderTodaySchedule() {
   const list = document.querySelector('#todayScheduleList');
   const empty = document.querySelector('#todayScheduleEmpty');
+  const title = document.querySelector('#todayScheduleTitle');
   if (!list || !empty) return;
+  title.textContent = TODAY_SCHEDULE_TITLE[todayScheduleRange];
+  document.querySelectorAll('#todayScheduleTabs button').forEach((button) => {
+    button.classList.toggle('active', button.dataset.range === todayScheduleRange);
+  });
+
   const today = getLocalDate();
-  const todays = tasks.filter((task) => task.due_date === today);
-  if (!todays.length) {
+  const tomorrow = addDays(today, 1);
+  const weekStart = addDays(today, -new Date(`${today}T00:00:00`).getDay());
+  const weekEnd = addDays(weekStart, 6);
+  const inRange = (task) => {
+    if (todayScheduleRange === 'today') return task.due_date === today;
+    if (todayScheduleRange === 'tomorrow') return task.due_date === tomorrow;
+    return task.due_date >= weekStart && task.due_date <= weekEnd;
+  };
+  const filtered = tasks.filter(inRange);
+  if (!filtered.length) {
     list.replaceChildren();
     empty.hidden = false;
+    empty.textContent = TODAY_SCHEDULE_EMPTY[todayScheduleRange];
     return;
   }
   empty.hidden = true;
-  const sorted = [...todays].sort((a, b) => {
+  const showDate = todayScheduleRange === 'week';
+  const sorted = [...filtered].sort((a, b) => {
+    if (a.due_date !== b.due_date) return a.due_date.localeCompare(b.due_date);
     if (a.scheduled_time && b.scheduled_time) return a.scheduled_time.localeCompare(b.scheduled_time);
     if (a.scheduled_time) return -1;
     if (b.scheduled_time) return 1;
@@ -2025,9 +2046,10 @@ function renderTodaySchedule() {
   list.replaceChildren(...sorted.map((task) => {
     const row = document.createElement('button');
     row.type = 'button';
-    row.className = `today-schedule-row status-${task.status}`;
+    row.className = `today-schedule-row status-${task.status}${showDate ? ' has-date' : ''}`;
     row.innerHTML = '<span class="today-schedule-time"></span><span class="today-schedule-title"></span><span class="today-schedule-badge"></span>';
-    row.querySelector('.today-schedule-time').textContent = task.scheduled_time ? task.scheduled_time.slice(0, 5) : '시간 미정';
+    const timeText = task.scheduled_time ? task.scheduled_time.slice(0, 5) : '시간 미정';
+    row.querySelector('.today-schedule-time').textContent = showDate ? `${Number(task.due_date.slice(5, 7))}/${Number(task.due_date.slice(8, 10))}(${dateMeta(task.due_date).weekday}) ${timeText}` : timeText;
     row.querySelector('.today-schedule-title').textContent = task.title;
     row.querySelector('.today-schedule-badge').textContent = TASK_STATUS_LABEL[task.status] || task.status;
     row.addEventListener('click', () => {
@@ -2038,6 +2060,13 @@ function renderTodaySchedule() {
     return row;
   }));
 }
+
+document.querySelector('#todayScheduleTabs').addEventListener('click', (event) => {
+  const button = event.target.closest('button[data-range]');
+  if (!button) return;
+  todayScheduleRange = button.dataset.range;
+  renderTodaySchedule();
+});
 
 // 최근 30일 흐름을 날짜별로 더하되, 신규 판매 시스템(sales)에 그날 기록이 있으면 그걸 쓰고
 // 없으면(아직 과거 데이터라) sales_legacy 값을 쓴다. 두 표를 더해서 이중 집계되는 일이 없게 한다.
