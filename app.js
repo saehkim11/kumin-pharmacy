@@ -47,8 +47,9 @@ const saleProductHint = document.querySelector('#saleProductHint');
 const recentProductStorageKey = 'pharmacy-recent-products';
 const saleDate = document.querySelector('#saleDate');
 const salePetSearch = document.querySelector('#salePetSearch');
+const salePetSuggestions = document.querySelector('#salePetSuggestions');
+let activeSalePetSuggestionIndex = -1;
 const salePetId = document.querySelector('#salePetId');
-const salePetOptions = document.querySelector('#salePetOptions');
 const salePetHistorySection = document.querySelector('#salePetHistorySection');
 const salePetHistoryTitle = document.querySelector('#salePetHistoryTitle');
 const salePetHistoryRows = document.querySelector('#salePetHistoryRows');
@@ -69,7 +70,6 @@ async function loadSalePetOptions() {
       const label = labelCount.get(base) > 1 ? `${base} #${pet.id}` : base;
       salePetDirectory.set(label, pet.id);
     });
-    salePetOptions.replaceChildren(...[...salePetDirectory.keys()].sort().map((label) => new Option(label)));
   } catch {
     // 자동완성 실패해도 판매 등록 자체는 계속 가능해야 함
   }
@@ -131,7 +131,6 @@ const petAllListWrap = document.querySelector('#petAllListWrap');
 const petAllListMessage = document.querySelector('#petAllListMessage');
 const petAllListTableWrap = document.querySelector('#petAllListTableWrap');
 const petAllListRows = document.querySelector('#petAllListRows');
-let petAllListLoaded = false;
 const petDetailPanel = document.querySelector('#petDetailPanel');
 const petDetailName = document.querySelector('#petDetailName');
 const petDetailInfo = document.querySelector('#petDetailInfo');
@@ -1188,9 +1187,9 @@ const legacySalesViewConfig = {
 };
 
 function renderLegacySales() {
-  const keyword = legacySalesSearch.value.trim().toLowerCase();
+  const keyword = legacySalesSearch.value.trim();
   const monthRows = legacySales.filter((row) => row.sold_on.startsWith(selectedLegacySalesMonth));
-  const filteredRows = monthRows.filter((row) => !keyword || row.product_name_raw.toLowerCase().includes(keyword));
+  const filteredRows = monthRows.filter((row) => matchesKoreanText(row.product_name_raw, keyword));
   const config = legacySalesViewConfig[legacySalesView];
   legacySalesChartTitle.firstChild.textContent = config.title + ' ';
   legacySalesChartLegend.hidden = !config.legend;
@@ -1256,6 +1255,15 @@ function matchesProduct(product, keyword = '') {
   if (!query) return true;
   const searchable = `${product.name} ${product.code}`.toLowerCase().replaceAll(' ', '');
   const initials = getKoreanInitials(product.name).replaceAll(' ', '');
+  return searchable.includes(query) || (/^[ㄱ-ㅎ]+$/.test(query) && initials.includes(query));
+}
+
+// 상품 검색과 같은 방식(초성 포함)으로 임의의 한글 텍스트를 검색어와 비교할 때 쓰는 공용 함수.
+function matchesKoreanText(text, keyword = '') {
+  const query = keyword.trim().toLowerCase().replaceAll(' ', '');
+  if (!query) return true;
+  const searchable = text.toLowerCase().replaceAll(' ', '');
+  const initials = getKoreanInitials(text).replaceAll(' ', '');
   return searchable.includes(query) || (/^[ㄱ-ㅎ]+$/.test(query) && initials.includes(query));
 }
 
@@ -1339,6 +1347,59 @@ function moveSuggestion(step) {
   options.forEach((option, index) => option.classList.toggle('active', index === activeSuggestionIndex));
   const activeOption = options[activeSuggestionIndex];
   saleProductSearch.setAttribute('aria-activedescendant', activeOption.id);
+  activeOption.scrollIntoView({ block: 'nearest' });
+}
+
+function closeSalePetSuggestions() {
+  activeSalePetSuggestionIndex = -1;
+  salePetSuggestions.hidden = true;
+  salePetSearch.setAttribute('aria-expanded', 'false');
+  salePetSearch.removeAttribute('aria-activedescendant');
+}
+
+function selectSalePet(label) {
+  salePetSearch.value = label;
+  closeSalePetSuggestions();
+  updateSalePetHistory();
+}
+
+function renderSalePetSuggestions(keyword = '') {
+  const labels = [...salePetDirectory.keys()].sort((a, b) => a.localeCompare(b, 'ko'));
+  const matched = (keyword.trim() ? labels.filter((label) => matchesKoreanText(label, keyword)) : labels).slice(0, 8);
+  activeSalePetSuggestionIndex = -1;
+  salePetSuggestions.replaceChildren();
+  salePetSearch.setAttribute('aria-expanded', 'true');
+
+  if (!matched.length) {
+    const empty = document.createElement('p');
+    empty.className = 'suggestion-empty';
+    empty.textContent = '일치하는 반려동물이 없습니다. 이름이나 초성을 다시 입력하거나 신규 등록하세요.';
+    salePetSuggestions.append(empty);
+    salePetSuggestions.hidden = false;
+    return;
+  }
+
+  matched.forEach((label, index) => {
+    const option = document.createElement('button');
+    option.type = 'button';
+    option.className = 'product-suggestion';
+    option.id = `sale-pet-option-${index}`;
+    option.setAttribute('role', 'option');
+    option.textContent = label;
+    option.addEventListener('mousedown', (event) => event.preventDefault());
+    option.addEventListener('click', () => selectSalePet(label));
+    salePetSuggestions.append(option);
+  });
+  salePetSuggestions.hidden = false;
+}
+
+function moveSalePetSuggestion(step) {
+  const options = [...salePetSuggestions.querySelectorAll('.product-suggestion')];
+  if (!options.length) return;
+  activeSalePetSuggestionIndex = (activeSalePetSuggestionIndex + step + options.length) % options.length;
+  options.forEach((option, index) => option.classList.toggle('active', index === activeSalePetSuggestionIndex));
+  const activeOption = options[activeSalePetSuggestionIndex];
+  salePetSearch.setAttribute('aria-activedescendant', activeOption.id);
   activeOption.scrollIntoView({ block: 'nearest' });
 }
 
@@ -2114,17 +2175,37 @@ function preparePetSearch() {
   petShowAllButton.hidden = false;
 }
 
+// 검색 결과 목록과 전체보기 목록이 같은 모양(이름/종류/품종/마지막 방문일/보호자/상세보기)을 쓰므로 행 생성을 공용화.
+function buildPetListRow(pet) {
+  const row = document.createElement('tr');
+  [pet.name, petSpeciesLabel[pet.species] || pet.species, pet.breed || '—', pet.last_visit_on || '—', pet.owner?.name || '—'].forEach((value) => {
+    const cell = document.createElement('td'); cell.textContent = value; row.append(cell);
+  });
+  const actionCell = document.createElement('td');
+  const button = document.createElement('button');
+  button.type = 'button'; button.className = 'pet-candidate-select'; button.textContent = '상세보기';
+  button.addEventListener('click', () => showPetDetail(pet.id));
+  actionCell.append(button);
+  row.append(actionCell);
+  return row;
+}
+
+let allPetsCache = null;
+async function loadAllPets() {
+  if (!allPetsCache) {
+    allPetsCache = await apiAll('pets?select=id,name,species,breed,sex,neutered,birth_date,last_visit_on,owner:owners(name)&order=name.asc');
+  }
+  return allPetsCache;
+}
+
 async function togglePetAllList() {
   const show = petAllListWrap.hidden;
   petAllListWrap.hidden = !show;
   petShowAllButton.textContent = show ? '전체보기 닫기' : '전체보기';
-  if (show && !petAllListLoaded) {
-    petAllListLoaded = true;
+  if (show && !allPetsCache) {
     try {
-      const rows = await apiAll('pets?select=id,name,species,breed,last_visit_on,owner:owners(name)&order=name.asc');
-      renderPetAllList(rows);
+      renderPetAllList(await loadAllPets());
     } catch (error) {
-      petAllListLoaded = false;
       petAllListMessage.hidden = false;
       petAllListTableWrap.hidden = true;
       petAllListMessage.textContent = '전체 목록을 불러오지 못했습니다.';
@@ -2141,32 +2222,20 @@ function renderPetAllList(pets) {
   }
   petAllListMessage.hidden = true;
   petAllListTableWrap.hidden = false;
-  petAllListRows.replaceChildren(...pets.map((pet) => {
-    const row = document.createElement('tr');
-    [pet.name, petSpeciesLabel[pet.species] || pet.species, pet.breed || '—', pet.last_visit_on || '—', pet.owner?.name || '—'].forEach((value) => {
-      const cell = document.createElement('td'); cell.textContent = value; row.append(cell);
-    });
-    const actionCell = document.createElement('td');
-    const button = document.createElement('button');
-    button.type = 'button'; button.className = 'pet-candidate-select'; button.textContent = '상세보기';
-    button.addEventListener('click', () => showPetDetail(pet.id));
-    actionCell.append(button);
-    row.append(actionCell);
-    return row;
-  }));
+  petAllListRows.replaceChildren(...pets.map(buildPetListRow));
 }
 
+// 이름을 다 말하지 않아도(외자·초성만 입력해도) 찾을 수 있도록, 상품 검색과 같은 방식으로 전체 목록을 직접 매칭한다.
 async function searchPets(name) {
   const query = name.trim();
   petDetailPanel.hidden = true;
   if (!query) { petSearchMessage.textContent = '이름을 입력하거나 말해 주세요.'; return; }
   petSearchMessage.textContent = '검색 중...';
   try {
-    const response = await api('rpc/rpc_search_pets_by_name', { method: 'POST', body: JSON.stringify({ p_name: query }) });
-    if (!response.ok) throw new Error('검색에 실패했습니다.');
-    renderPetCandidates(await response.json());
+    const pets = await loadAllPets();
+    renderPetCandidates(pets.filter((pet) => matchesKoreanText(pet.name, query)));
   } catch (error) {
-    petSearchMessage.textContent = error.message;
+    petSearchMessage.textContent = '검색에 실패했습니다.';
     petCandidatesWrap.hidden = true;
   }
 }
@@ -2179,19 +2248,7 @@ function renderPetCandidates(results) {
   }
   petSearchMessage.textContent = `${results.length}건을 찾았습니다. 하나를 선택하세요.`;
   petCandidatesWrap.hidden = false;
-  petCandidateRows.replaceChildren(...results.map((pet) => {
-    const row = document.createElement('tr');
-    [pet.pet_name, petSpeciesLabel[pet.species] || pet.species, pet.breed || '—', pet.last_visit_on || '—', pet.owner_name_masked].forEach((value) => {
-      const cell = document.createElement('td'); cell.textContent = value; row.append(cell);
-    });
-    const actionCell = document.createElement('td');
-    const button = document.createElement('button');
-    button.type = 'button'; button.className = 'pet-candidate-select'; button.textContent = '상세보기';
-    button.addEventListener('click', () => showPetDetail(pet.pet_id));
-    actionCell.append(button);
-    row.append(actionCell);
-    return row;
-  }));
+  petCandidateRows.replaceChildren(...results.map(buildPetListRow));
 }
 
 async function showPetDetail(petId) {
@@ -2629,8 +2686,22 @@ function openNewPetDialog(origin) {
 }
 newPetToggle.addEventListener('click', () => openNewPetDialog('pets'));
 salePetNewButton.addEventListener('click', () => openNewPetDialog('sales'));
-salePetSearch.addEventListener('input', updateSalePetHistory);
-salePetSearch.addEventListener('change', updateSalePetHistory);
+salePetSearch.addEventListener('focus', () => renderSalePetSuggestions(salePetSearch.value));
+salePetSearch.addEventListener('input', () => { renderSalePetSuggestions(salePetSearch.value); updateSalePetHistory(); });
+salePetSearch.addEventListener('keydown', (event) => {
+  if (event.key === 'ArrowDown') { event.preventDefault(); renderSalePetSuggestions(salePetSearch.value); moveSalePetSuggestion(1); }
+  if (event.key === 'ArrowUp') { event.preventDefault(); renderSalePetSuggestions(salePetSearch.value); moveSalePetSuggestion(-1); }
+  if (event.key === 'Escape') closeSalePetSuggestions();
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    const options = [...salePetSuggestions.querySelectorAll('.product-suggestion')];
+    const selectedOption = options[activeSalePetSuggestionIndex] || options[0];
+    selectedOption?.click();
+  }
+});
+document.addEventListener('click', (event) => {
+  if (!event.target.closest('.sale-pet-field')) closeSalePetSuggestions();
+});
 document.querySelector('#closeNewPetDialog').addEventListener('click', () => newPetDialog.close());
 newPetForm.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -2667,7 +2738,6 @@ newPetForm.addEventListener('submit', async (event) => {
     newPetDialog.close();
     if (newPetOrigin === 'sales') {
       salePetDirectory.set(label, newPetId);
-      salePetOptions.append(new Option(label));
       salePetSearch.value = label;
       updateSalePetHistory();
       document.querySelector('#saleMessage').textContent = `${label} 등록 완료 — 이 반려동물로 판매를 담을 수 있습니다.`;

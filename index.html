@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>pharmacy management</title>
-    <link rel="stylesheet" href="styles.css?v=20261112f" />
+    <link rel="stylesheet" href="styles.css?v=20261112g" />
   </head>
   <body>
     <div class="app-shell">
@@ -84,9 +84,9 @@
                   <label for="salePetSearch">반려동물 <span>(선택)</span></label>
                   <button class="link-button" id="salePetNewButton" type="button" disabled>+ 신규</button>
                 </div>
-                <input id="salePetSearch" type="search" placeholder="이름(보호자) — 안 고르면 미지정" list="salePetOptions" autocomplete="off" disabled />
+                <input id="salePetSearch" type="search" placeholder="이름(보호자) — 안 고르면 미지정, 초성도 가능" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="salePetSuggestions" disabled />
                 <input id="salePetId" type="hidden" value="" />
-                <datalist id="salePetOptions"></datalist>
+                <div class="product-suggestions" id="salePetSuggestions" role="listbox" hidden></div>
               </div>
               <button class="login-button" id="addSaleItem" type="button" disabled>판매 목록에 담기</button>
             </div>
@@ -125,7 +125,7 @@
                 <div class="field-label-row">
                   <label for="petSearchInput">반려동물 이름</label>
                 </div>
-                <input id="petSearchInput" type="search" placeholder="이름을 입력하거나 마이크를 눌러 말하세요" autocomplete="off" disabled />
+                <input id="petSearchInput" type="search" placeholder="이름·초성을 입력하거나 마이크를 눌러 말하세요" autocomplete="off" disabled />
               </div>
               <button class="login-button icon-button" id="petMicButton" type="button" disabled title="마이크로 이름 말하기">🎤</button>
               <button class="login-button" id="petSearchButton" type="button" disabled>검색</button>
@@ -223,7 +223,7 @@
             <p class="empty-message" id="legacySalesSummary">불러오는 중...</p>
             <div class="toolbar legacy-sales-toolbar">
               <div><label for="legacySalesMonth">조회 월</label><select id="legacySalesMonth"></select></div>
-              <div><label for="legacySalesSearch">상품명 검색 <span>(선택)</span></label><input id="legacySalesSearch" type="search" placeholder="상품명으로 필터" autocomplete="off" /></div>
+              <div><label for="legacySalesSearch">상품명 검색 <span>(선택)</span></label><input id="legacySalesSearch" type="search" placeholder="상품명·초성으로 필터" autocomplete="off" /></div>
             </div>
             <div class="legacy-sales-view-tabs" id="legacySalesViewTabs">
               <button type="button" class="active" data-view="daily">일별 추이</button>
@@ -324,6 +324,6 @@
       <p class="form-message" id="newPetFormMessage"></p>
     </dialog>
     <script src="config.js"></script>
-    <script src="app.js?v=20261112f"></script>
+    <script src="app.js?v=20261112g"></script>
   </body>
 </html>
