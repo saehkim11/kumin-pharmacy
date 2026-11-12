@@ -147,6 +147,14 @@ html[data-theme="dark"] .stock-lookup-heading select{background:#111c2e;border-c
 #petCandidateRows td:last-child,#petCandidateRows th:last-child{text-align:right}.pet-candidate-select{border:1px solid var(--blue);border-radius:7px;background:var(--blue-soft);color:var(--blue);font:inherit;font-weight:700;padding:6px 12px;cursor:pointer}.pet-candidate-select:hover{background:var(--blue);color:#fff}
 @media(max-width:560px){.pet-search-toolbar{grid-template-columns:1fr}#petShowAllButton{grid-column:1 / -1}.pet-detail-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 html[data-theme="dark"] .pet-detail-grid div{background:#1c2a40;border-color:var(--line)}
+.pet-detail-block{margin-top:20px;padding:18px 20px;border:1px solid var(--line);border-radius:10px;background:#fbfcfe}
+.pet-detail-block h4{margin:0 0 12px;font-size:14px;color:var(--muted);font-weight:700}
+.pet-detail-block .table-wrap{margin-top:0;border:0;border-radius:0;background:transparent}
+.pet-detail-notes{font-size:15px;line-height:1.7;color:var(--ink)}
+.pet-detail-notes p{position:relative;margin:0 0 10px;padding-left:14px}
+.pet-detail-notes p::before{content:'';position:absolute;left:0;top:10px;width:5px;height:5px;border-radius:50%;background:var(--blue)}
+.pet-detail-notes p:last-child{margin-bottom:0}
+html[data-theme="dark"] .pet-detail-block{background:#1c2a40}
 .pet-visit-form{display:grid;grid-template-columns:150px minmax(0,1fr) minmax(0,1fr) auto;gap:10px;align-items:end;margin-top:12px;max-width:900px}.pet-visit-form label{display:block;margin:0 0 6px;color:#445066;font-size:13px;font-weight:700}.pet-visit-form label span{color:var(--muted);font-weight:400}.pet-visit-form input{width:100%;height:42px;padding:0 10px;border:1px solid #d9e0ea;border-radius:8px;background:#fff;color:var(--ink);font:inherit}.pet-visit-form input:focus{outline:3px solid rgba(47,111,237,.15);border-color:var(--blue)}.pet-visit-form .login-button{height:42px}
 @media(max-width:860px){.pet-visit-form{grid-template-columns:1fr 1fr}.pet-visit-form .login-button{grid-column:1/-1}}
 html[data-theme="dark"] .pet-visit-form input{background:#111c2e;border-color:#40516d;color:var(--ink)}

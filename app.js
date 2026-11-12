@@ -2530,7 +2530,16 @@ function renderPetDetail(detail, visits, purchases = []) {
     div.append(labelSpan, valueTag);
     return div;
   }));
-  petDetailNotes.textContent = detail.notes || '기록된 진료기록이 없습니다.';
+  // notes는 여러 방문 기록이 " | "로 이어붙은 메모라서, 한 줄씩 끊어 보여주면 훨씬 읽기 쉽다.
+  if (detail.notes) {
+    petDetailNotes.replaceChildren(...detail.notes.split('|').map((line) => line.trim()).filter(Boolean).map((line) => {
+      const p = document.createElement('p');
+      p.textContent = line;
+      return p;
+    }));
+  } else {
+    petDetailNotes.textContent = '기록된 진료기록이 없습니다.';
+  }
   if (!visits.length) {
     petVisitRows.replaceChildren();
     petVisitEmpty.hidden = false;
