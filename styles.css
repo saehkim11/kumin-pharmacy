@@ -186,6 +186,9 @@ html[data-theme="dark"] .legacy-sales-view-tabs button{background:#111c2e;border
 .trend-closed-dot{fill:var(--muted)}
 .trend-legend{display:flex;flex-wrap:wrap;gap:16px;margin-top:10px;color:var(--muted);font-size:12px}
 .trend-legend span{display:flex;align-items:center;gap:6px}
+.forecast-mix{margin-top:18px;padding:18px;border:1px solid var(--line);border-radius:10px}.forecast-mix h4{margin:0 0 6px;font-size:15px}.forecast-mix-note{margin:0 0 14px;color:var(--muted);font-size:12px;line-height:1.55}.forecast-mix-row{display:grid;grid-template-columns:minmax(0,1fr) 120px 48px;align-items:center;gap:10px;margin:9px 0;font-size:13px}.forecast-mix-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.forecast-mix-row b{height:8px;border-radius:99px;background:#eaf0f5;overflow:hidden}.forecast-mix-row b i{display:block;height:100%;border-radius:99px;background:var(--blue)}.forecast-mix-row strong{text-align:right;color:var(--ink);font-variant-numeric:tabular-nums}
+html[data-theme="dark"] .forecast-mix-row b{background:#30415e}
+@media(max-width:560px){.forecast-mix-row{grid-template-columns:minmax(0,1fr) 72px 40px;font-size:12px}}
 .trend-swatch{display:inline-block;width:16px;height:3px;border-radius:2px;background:var(--blue)}
 .trend-swatch.predicted{background:repeating-linear-gradient(90deg,#7a93c4 0 4px,transparent 4px 7px)}
 .trend-swatch.band{width:12px;height:10px;border-radius:3px;background:rgba(47,111,237,.25)}

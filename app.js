@@ -1013,6 +1013,47 @@ function renderWeatherCalendar(forecast) {
   return `<div class="weather-calendar">${headCells}${emptyCells}${dayCells}${trailingCells}</div>`;
 }
 
+// 예측에 쓰인 회귀식은 "하루 총 매출액" 하나만 계산한다(상품별로 따로 예측하지 않음).
+// 그래서 "무슨 약이 많이 팔릴까"는 같은 달(과거 모든 연도)에 실제로 가장 많이 팔렸던 상품을
+// 과거 실적에서 뽑아 참고용으로 보여준다 — 이번 예측치가 그 상품들로만 구성된다는 뜻은 아니다.
+function buildForecastProductMix(forecast) {
+  const months = new Set(forecast.filter((f) => !f.closed).map((f) => f.date.slice(5, 7)));
+  if (!months.size || !legacySales.length) return null;
+  const rows = legacySales.filter((row) => months.has(row.sold_on.slice(5, 7)));
+  if (!rows.length) return null;
+  const byProduct = new Map();
+  rows.forEach((row) => {
+    const name = row.product_name_raw;
+    const entry = byProduct.get(name) || { amount: 0, quantity: 0 };
+    entry.amount += Number(row.amount || 0);
+    entry.quantity += Number(row.quantity || 0);
+    byProduct.set(name, entry);
+  });
+  const total = [...byProduct.values()].reduce((sum, v) => sum + v.amount, 0);
+  if (total <= 0) return null;
+  const top = [...byProduct.entries()]
+    .map(([name, v]) => ({ name, ...v, share: (v.amount / total) * 100 }))
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, 6);
+  const monthLabel = [...months].map((m) => Number(m)).sort((a, b) => a - b).map((m) => `${m}월`).join('·');
+  return { top, monthLabel, tick: [...months].some((m) => isTickSeason(Number(m))) };
+}
+
+function renderForecastProductMix(forecast) {
+  const mix = buildForecastProductMix(forecast);
+  if (!mix) return '';
+  const rows = mix.top.map((item) => `<div class="forecast-mix-row">
+    <span class="forecast-mix-name">${escapeText(item.name)}</span>
+    <b><i style="width:${Math.max(4, item.share).toFixed(1)}%"></i></b>
+    <strong>${item.share.toFixed(1)}%</strong>
+  </div>`).join('');
+  return `<div class="forecast-mix">
+    <h4>${mix.monthLabel}에 실제로 많이 팔렸던 상품${mix.tick ? ' (진드기 예방 성수기 포함)' : ''}</h4>
+    <p class="forecast-mix-note">예측 매출액은 하루 합계 금액만 계산합니다. 아래는 과거 ${mix.monthLabel} 실제 판매 데이터에서 매출 비중이 컸던 상품이며, 이번 예측이 반드시 이 상품들로 채워진다는 뜻은 아닙니다.</p>
+    <div class="forecast-mix-rows">${rows}</div>
+  </div>`;
+}
+
 function wonShort(v) {
   const n = Math.round(v);
   if (Math.abs(n) >= 10000) return `${(n / 10000).toLocaleString('ko-KR', { maximumFractionDigits: 1 })}만원`;
@@ -1110,7 +1151,7 @@ function renderWeatherView() {
   const { forecast, extended } = forecastWeatherSales(model);
 
   legacySalesChart.classList.add('weather-mode');
-  legacySalesChart.innerHTML = `${renderWeatherCalendar(forecast)}${renderSalesTrendChart(extended, model)}`;
+  legacySalesChart.innerHTML = `${renderWeatherCalendar(forecast)}${renderSalesTrendChart(extended, model)}${renderForecastProductMix(forecast)}`;
 
   setTableHead(['일자', '요일', '예상기온', '예상강수', '추정인구', '공휴일', '예측 매출액'], 6);
   setRows(forecast.map((f) => ({
