@@ -1496,19 +1496,19 @@ function buildProfitAnalysis(sales, year, latestSaleDate, isLatestYear) {
   const cutoffText = `${Number(cutoff.slice(0, 2))}월 ${Number(cutoff.slice(3, 5))}일`;
 
   // 상단 지표 카드: good은 증가가 좋은 지표(true)인지, 나쁜 지표(false: 원가)인지
-  const card = (title, valueText, deltaText, change, good = true) => {
+  const card = (title, valueText, deltaText, change, good = true, icon = '📈', color = 'blue') => {
     const direction = change === null ? 'none' : (change >= 0) === good ? 'up' : 'down';
-    return `<article><p>${title}</p><strong>${valueText}</strong><span>전년 동기 대비 <em class="kpi-delta ${direction}">${deltaText}</em></span></article>`;
+    return `<article><i class="summary-icon c-${color}" aria-hidden="true">${icon}</i><div class="summary-body"><p>${title}</p><strong>${valueText}</strong><span>전년 동기 대비 <em class="kpi-delta ${direction}">${deltaText}</em></span></div></article>`;
   };
   const percentText = (change) => (change === null ? '비교 기록 없음' : `${change >= 0 ? '▲ +' : '▼ '}${change.toFixed(1)}%`);
   const marginDiff = now.margin !== null && before.margin !== null ? now.margin - before.margin : null;
   const profitPerOrderNow = ordersNow ? now.profit / ordersNow : 0;
   const profitPerOrderBefore = ordersBefore ? before.profit / ordersBefore : 0;
   const cards = [
-    card('매출총이익', money(now.profit), percentText(percentChange(now.profit, before.profit)), percentChange(now.profit, before.profit)),
-    card('마진율', now.margin === null ? '—' : `${now.margin.toFixed(1)}%`, marginDiff === null ? '비교 기록 없음' : `${marginDiff >= 0 ? '▲ +' : '▼ '}${marginDiff.toFixed(1)}%p`, marginDiff),
-    card('원가 합계', money(now.cost), percentText(percentChange(now.cost, before.cost)), percentChange(now.cost, before.cost), false),
-    card('주문 1건당 이익', money(profitPerOrderNow), percentText(percentChange(profitPerOrderNow, profitPerOrderBefore)), percentChange(profitPerOrderNow, profitPerOrderBefore))
+    card('매출총이익', money(now.profit), percentText(percentChange(now.profit, before.profit)), percentChange(now.profit, before.profit), true, '💰', 'blue'),
+    card('마진율', now.margin === null ? '—' : `${now.margin.toFixed(1)}%`, marginDiff === null ? '비교 기록 없음' : `${marginDiff >= 0 ? '▲ +' : '▼ '}${marginDiff.toFixed(1)}%p`, marginDiff, true, '📈', 'green'),
+    card('원가 합계', money(now.cost), percentText(percentChange(now.cost, before.cost)), percentChange(now.cost, before.cost), false, '📦', 'amber'),
+    card('주문 1건당 이익', money(profitPerOrderNow), percentText(percentChange(profitPerOrderNow, profitPerOrderBefore)), percentChange(profitPerOrderNow, profitPerOrderBefore), true, '🧾', 'purple')
   ].join('');
 
   // 분류별 수익성
