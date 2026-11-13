@@ -17,6 +17,13 @@ Thumbs.db
 .DS_Store
 *.codexbackup
 
+# Playwright 실행 산출물
+test-results/
+pw-artifacts/
+pwout/
+playwright-report/
+blob-report/
+
 # 실제 업무 데이터 (절대 업로드 금지) - 엑셀·CSV 원본과 가져오기 결과는 data/real/ 에만 둔다
 data/real/
 data/raw/

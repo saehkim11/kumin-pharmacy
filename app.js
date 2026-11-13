@@ -118,6 +118,11 @@ const purchaseQuantity = document.querySelector('#purchaseQuantity');
 const purchaseUnitCost = document.querySelector('#purchaseUnitCost');
 const purchaseLotNo = document.querySelector('#purchaseLotNo');
 const purchaseExpiryDate = document.querySelector('#purchaseExpiryDate');
+const costLookupSearch = document.querySelector('#costLookupSearch');
+const costLookupMicButton = document.querySelector('#costLookupMicButton');
+const costLookupMessage = document.querySelector('#costLookupMessage');
+const costLookupTableWrap = document.querySelector('#costLookupTableWrap');
+const costLookupRows = document.querySelector('#costLookupRows');
 
 const petSearchInput = document.querySelector('#petSearchInput');
 const petMicButton = document.querySelector('#petMicButton');
@@ -190,6 +195,26 @@ if (SpeechRecognitionCtor) {
   });
 } else {
   petMicButton.title = '이 브라우저는 음성 인식을 지원하지 않습니다. 직접 입력해 주세요.';
+}
+
+let costLookupRecognition = null;
+if (SpeechRecognitionCtor) {
+  costLookupRecognition = new SpeechRecognitionCtor();
+  costLookupRecognition.lang = 'ko-KR';
+  costLookupRecognition.interimResults = false;
+  costLookupRecognition.maxAlternatives = 1;
+  costLookupRecognition.addEventListener('result', (event) => {
+    const text = event.results[0][0].transcript.trim();
+    costLookupSearch.value = text;
+    renderCostLookup(text);
+  });
+  costLookupRecognition.addEventListener('end', () => costLookupMicButton.classList.remove('listening'));
+  costLookupRecognition.addEventListener('error', (event) => {
+    costLookupMicButton.classList.remove('listening');
+    costLookupMessage.textContent = event.error === 'not-allowed' ? '마이크 권한을 허용해 주세요.' : '음성 인식에 실패했습니다. 다시 시도하거나 직접 입력해 주세요.';
+  });
+} else {
+  costLookupMicButton.title = '이 브라우저는 음성 인식을 지원하지 않습니다. 직접 입력해 주세요.';
 }
 
 function getSeasonalitySettings() {
@@ -283,17 +308,18 @@ const siteTreeData = {
   label: '약국 ERP', full: 'pharmacy management', access: 'all', note: '로그인 후 역할(admin, staff)에 따라 메뉴가 달라지는 약국 업무 사이트입니다.', children: [
     { label: '대시보드', full: '대시보드', access: 'all', note: '오늘 일정·매출 등 핵심 정보를 한눈에 보는 첫 화면입니다.', children: [
       { label: '오늘 일정', full: '오늘 일정(예약·업무)', access: 'all', note: '공유 업무 중 오늘 날짜인 것을 시간순으로 보여줍니다. 시간을 적어두면 예약처럼, 안 적으면 할 일로 보입니다.', data: ['action_tasks'] },
-      { label: '요약 카드', full: '요약 카드 4개', access: 'all', note: '오늘 매출 · 판매 건수 · 재고 확인 필요 · 이번 달 마진율(admin 전용 지표)', data: ['sales', 'products', 'sale_items', 'v_sale_items_profit'], insight: 2 },
+      { label: '요약 카드', full: '요약 카드 4개', access: 'all', note: '오늘 매출 · 판매 건수 · 이번 달 판매 수익 · 이번 달 마진율(수익·마진율은 admin 전용 지표)', data: ['sales', 'products', 'sale_items', 'v_sale_items_profit'], insight: 2 },
       { label: '매출 분석', full: '매출·상품 분석', access: 'admin', note: '연도별 월 매출 그래프와 분류별 전년 대비 증감. 월 버튼을 누르면 두 영역이 함께 바뀝니다.', data: ['sales', 'sale_items'], insight: 3 }
     ] },
     { label: '판매', full: '판매 관리', access: 'all', note: '판매를 등록하고 월별 판매 내역을 확인합니다.', children: [
-      { label: '판매 등록', full: '판매 등록', access: 'all', note: '상품 검색 → 수량 → 판매일 → 목록 담기 → 결제수단 → 등록', data: ['rpc_create_sale', 'products'] },
-      { label: '판매 내역', full: '월별 판매 내역', access: 'all', note: '일자별 · 품목별 판매수량과 매출액', data: ['sales', 'sale_items'], insight: 2 }
+      { label: '판매 등록', full: '판매 등록', access: 'all', note: '상품 검색 → 수량 → 판매가(공항가격 제안, 수정 가능) → 판매일 → 반려동물(선택) → 목록 담기 → 결제수단 → 등록', data: ['rpc_create_sale', 'products', 'product_costs'] },
+      { label: '판매 내역', full: '월별 판매 내역', access: 'all', note: '일자별 · 품목별 판매수량과 매출액. 판매 등록과 같은 화면 아래쪽에 바로 표시됩니다.', data: ['sales', 'sale_items'], insight: 2 }
     ] },
-    { label: '고객·반려동물 관리', full: '고객·반려동물 관리', access: 'all', note: '이름을 음성 또는 텍스트로 검색해 보호자 연락처, 진료·접종·약구매 이력을 확인하고 신규 보호자·반려동물을 등록합니다.', data: ['pets', 'owners', 'pet_visits'] },
-    { label: '입고', full: '입고 관리', access: 'admin', note: '입고를 등록하고 재고 수불부를 확인합니다. 직원에게는 메뉴가 보이지 않습니다.', insight: 1, children: [
-      { label: '입고 등록', full: '입고 등록', access: 'admin', note: '거래처 · 입고일 · 단가 · 로트 · 유효기간', data: ['rpc_receive_purchase', 'suppliers'] },
-      { label: '수불부', full: '월별 재고 수불부', access: 'admin', note: '기초 · 입고 · 출고 · 재고 수량', data: ['inventory_movements', 'products'], insight: 1 }
+    { label: '고객·반려동물 관리', full: '고객·반려동물 관리', access: 'all', note: '이름을 음성 또는 텍스트로 검색해 보호자 연락처, 진료·접종·약구매 이력을 확인하고 신규 보호자·반려동물을 등록합니다. 판매 등록 시 반려동물을 선택하면 그 자리에서 구매 이력에 추가됩니다.', data: ['pets', 'owners', 'pet_visits', 'sale_items'] },
+    { label: '입고', full: '입고 관리', access: 'admin', note: '상품 매입단가 조회, 입고 등록, 월별 재고 수불부(현재 숨김)로 구성됩니다. 직원에게는 메뉴가 보이지 않습니다.', insight: 1, children: [
+      { label: '매입단가 조회', full: '상품 매입단가 조회', access: 'admin', note: '초성·음성 검색으로 상품명·거래처·매입단가·공항가격(제안가)·입력시기를 바로 확인합니다. 엑셀(통합 시트)에서 가져온 값이 기본이며, 입고를 등록하면 그 단가로 갱신됩니다.', data: ['product_costs', 'suppliers'] },
+      { label: '입고 등록', full: '입고 등록', access: 'admin', note: '거래처 · 입고일 · 단가 · 로트 · 유효기간. 등록한 단가가 기준 매입단가(product_costs)에도 반영됩니다.', data: ['rpc_receive_purchase', 'suppliers', 'product_costs'] },
+      { label: '수불부', full: '월별 재고 수불부 (현재 화면에서 숨김)', access: 'admin', note: '기초 · 입고 · 출고 · 재고 수량을 보여주는 표입니다. 아직 실제 입고 등록 기록이 없어 쓸 데이터가 없으므로 사용자 요청으로 화면에서 숨겨두었습니다. 코드는 그대로 남아 있어 필요할 때 다시 보이게 할 수 있습니다.', data: ['inventory_movements', 'products'], insight: 1 }
     ] },
     { label: '공유 업무', full: '공유 업무', access: 'all', note: '업무를 달력으로 공유하고 상태와 댓글로 진행 상황을 남깁니다.', children: [
       { label: '업무 달력', full: '업무 달력', access: 'all', note: '날짜별 업무와 댓글 말풍선(읽음·안 읽음)', data: ['action_tasks', 'task_comments'], insight: 4 },
@@ -317,8 +343,103 @@ const siteInsights = [
   { title: '대시보드와 분석 메뉴의 역할이 겹침', text: '매출 그래프와 분류 증감은 대시보드에, 매출 KPI는 분석 메뉴에 있어 둘 다 같은 판매 데이터를 다른 모습으로 보여줍니다.', idea: '대시보드는 오늘의 판단용, 분석은 깊이 보기용으로 기준을 정하면 사용자가 찾기 쉽습니다.' },
   { title: '공유 업무 달력은 한 칸에 업무 2개만 표시', text: '한 날짜에 업무가 3개 이상이면 2개만 보이고, 날짜를 누르면 첫 번째 업무만 열립니다.', idea: '날짜를 누르면 그날 업무 목록을 보여주는 방식을 검토해 볼 수 있습니다.' },
   { title: '날씨 예보를 외부 서비스에 의존', text: '서울 7일 예보를 외부 서비스(open-meteo)에서 받아옵니다. 서비스가 응답하지 않으면 예보 부분은 안내 문구로 대체됩니다.', idea: '장애 시 안내가 충분한지 점검하고, 매장 위치가 서울이 맞는지 확인해 볼 수 있습니다.' },
-  { title: '과거 매입·거래처 데이터가 아직 안 들어와 있음', text: '원본 엑셀의 "약품매입"(945행)·"사료매입"(520행)·"공급처"(114행) 시트는 아직 한 번도 가져오지 않았습니다. 그래서 상품 원가(매입단가)가 비어있는 상품이 많고, 거래처 목록도 비어있어 입고 등록 시 매번 새로 만들어야 합니다.', idea: '원가만 먼저 채우는 건 비교적 안전하지만, 실제 재고 수량까지 맞추려면 그동안의 매입과 판매를 날짜순으로 전부 맞춰봐야 해서 신중한 작업이 필요합니다. 검토 후 별도로 진행을 권장합니다.' }
+  { title: '과거 매입·거래처 참고정보는 들어왔지만 실제 재고 입고 기록은 아직 없음', text: '원본 엑셀 "통합" 시트의 매입단가·공항가격·거래처·마진율은 상품 1,212건에 반영했고 거래처 119곳도 등록했습니다. 다만 이 값은 참고용 스냅샷이라, 실제 "입고 등록"을 한 번도 한 적이 없어 재고 수량과 마진율 계산에 쓰이는 이동평균원가(product_stock_costs)는 아직 0입니다.', idea: '분석 화면의 마진율·매출총이익이 지금은 원가 0 기준이라 비정상적으로 높게(100%) 보일 수 있습니다. 실제 입고 등록을 시작하면 자동으로 정확해집니다.' }
 ];
+
+// org-chart 항목과 데이터 연결 그래프 노드/화살표가 함께 쓰는 설명 팝업
+function openStructureDialog(node) {
+  const dialog = document.querySelector('#structureDialog');
+  document.querySelector('#structureDialogEyebrow').textContent = node.access === 'admin' ? 'ADMIN 전용' : '전체 공통';
+  document.querySelector('#structureDialogTitle').textContent = node.full;
+  const body = document.querySelector('#structureDialogBody');
+  body.replaceChildren();
+  if (node.note) { const note = document.createElement('p'); note.className = 'dialog-note'; note.textContent = node.note; body.append(note); }
+  if (node.data?.length) {
+    const label = document.createElement('p'); label.className = 'dialog-label'; label.textContent = '연결된 데이터';
+    const chips = document.createElement('div'); chips.className = 'tree-data';
+    node.data.forEach((name) => { const chip = document.createElement('span'); chip.className = 'tag data'; chip.textContent = name; chips.append(chip); });
+    body.append(label, chips);
+  }
+  if (node.insight) {
+    const insight = siteInsights[node.insight - 1];
+    const box = document.createElement('div'); box.className = 'dialog-insight';
+    box.innerHTML = '<b></b><p></p><p class="insight-idea"></p>';
+    box.querySelector('b').textContent = `개선 포인트 ${node.insight}. ${insight.title}`;
+    box.querySelectorAll('p')[0].textContent = insight.text;
+    box.querySelector('.insight-idea').textContent = `검토할 점: ${insight.idea}`;
+    body.append(box);
+  }
+  dialog.showModal();
+}
+
+// ---------- 사이트 구조: 데이터 연결 그래프 ----------
+// 한 화면에서의 입력이 다른 화면에 실제로 어떻게 반영되는지(옵시디언 그래프 느낌의 점-화살표 지도).
+// 좌표는 고정값(viewBox 0 0 1000 560)이라 레이아웃이 바뀔 때만 손으로 조정하면 됩니다.
+const siteFlowNodes = [
+  { id: 'sale', label: '판매 등록', full: '판매 관리 · 판매 등록', access: 'all', x: 190, y: 80, note: '상품·수량·판매가(공항가격 제안)·반려동물을 담아 등록하면 여러 화면에 동시에 반영됩니다.', data: ['rpc_create_sale'] },
+  { id: 'history', label: '판매 내역', full: '판매 관리 · 월별 판매 내역', access: 'all', x: 500, y: 80, note: '판매 등록 화면 바로 아래에서 같은 월의 판매 건을 확인합니다.', data: ['sales', 'sale_items'] },
+  { id: 'pets', label: '고객·반려동물 관리', full: '고객·반려동물 관리', access: 'all', x: 820, y: 80, note: '판매 등록 시 반려동물을 선택했다면, 그 반려동물의 "구매 이력"에 이번 판매가 바로 추가됩니다.', data: ['sale_items', 'pets'] },
+  { id: 'costLookup', label: '매입단가 조회', full: '입고 관리 · 상품 매입단가 조회', access: 'admin', x: 190, y: 260, note: '엑셀에서 가져온 매입단가·공항가격을 보여주고, 입고 등록을 하면 이 값이 갱신됩니다.', data: ['product_costs'] },
+  { id: 'purchase', label: '입고 등록', full: '입고 관리 · 입고 등록', access: 'admin', x: 190, y: 440, note: '거래처·단가를 등록하면 매입단가 조회 값과 분석 화면의 원가 계산이 함께 갱신됩니다.', data: ['rpc_receive_purchase'] },
+  { id: 'dashboard', label: '대시보드 요약 카드', full: '대시보드 · 요약 카드', access: 'all', x: 500, y: 260, note: '오늘 매출·판매 건수·이번 달 판매 수익이 판매 등록 즉시 바뀝니다.', data: ['sales'] },
+  { id: 'analytics', label: '분석(매출총이익·마진율)', full: '분석 · 수익성 분석', access: 'admin', x: 820, y: 260, note: '판매 등록의 매출과 입고 등록의 매입원가를 함께 계산해 매출총이익과 마진율을 보여줍니다.', data: ['v_sale_items_profit'] },
+  { id: 'legacy', label: '매출관리(과거 매출)', full: '매출관리', access: 'admin', x: 500, y: 440, note: '엑셀에서 가져온 과거 매출(sales_legacy) 전용 조회 화면입니다. 지금 판매 등록·대시보드·분석과는 서로 연결되어 있지 않은 별도 데이터입니다.', data: ['sales_legacy'], isolated: true },
+];
+const siteFlowEdges = [
+  { from: 'sale', to: 'history', label: '등록 즉시 집계' },
+  { from: 'sale', to: 'pets', label: '반려동물 선택 시 구매이력 추가' },
+  { from: 'sale', to: 'dashboard', label: '오늘 매출·판매 수익' },
+  { from: 'sale', to: 'analytics', label: '매출·마진율 계산' },
+  { from: 'purchase', to: 'costLookup', label: '입고 단가로 갱신' },
+  { from: 'costLookup', to: 'sale', label: '공항가격을 판매가 제안값으로' },
+  { from: 'purchase', to: 'analytics', label: '매입원가 반영' },
+];
+
+function renderSiteFlowGraph() {
+  const container = document.querySelector('#siteFlowGraph');
+  if (!container) return;
+  const byId = Object.fromEntries(siteFlowNodes.map((node) => [node.id, node]));
+  const NODE_W = 150, NODE_H = 46;
+  const edgePaths = siteFlowEdges.map((edge, index) => {
+    const a = byId[edge.from], b = byId[edge.to];
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    // 노드 테두리 바로 바깥에서 시작/끝나게 살짝 당김(화살표가 박스 안으로 파고들지 않도록)
+    const pad = 30;
+    const x1 = a.x + ux * pad, y1 = a.y + uy * pad;
+    const x2 = b.x - ux * pad, y2 = b.y - uy * pad;
+    const midX = (x1 + x2) / 2, midY = (y1 + y2) / 2;
+    return { edge, x1, y1, x2, y2, midX, midY, id: `flow-edge-${index}` };
+  });
+  const svg = `
+    <svg viewBox="0 0 1000 530" role="img" aria-label="데이터 연결 그래프">
+      <defs><marker id="flowArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" /></marker></defs>
+      ${edgePaths.map((p) => `<g class="flow-edge" tabindex="0" role="button" aria-label="${escapeText(p.edge.label)}">
+        <line x1="${p.x1}" y1="${p.y1}" x2="${p.x2}" y2="${p.y2}" marker-end="url(#flowArrow)" />
+        <rect class="flow-edge-label-bg" x="${p.midX - p.edge.label.length * 5.2}" y="${p.midY - 11}" width="${p.edge.label.length * 10.4}" height="18" rx="4" />
+        <text x="${p.midX}" y="${p.midY + 3}" text-anchor="middle">${escapeText(p.edge.label)}</text>
+      </g>`).join('')}
+      ${siteFlowNodes.map((node) => `<g class="flow-node ${node.access} ${node.isolated ? 'isolated' : ''}" tabindex="0" role="button" data-id="${node.id}" aria-label="${escapeText(node.full)} 설명 보기">
+        <rect x="${node.x - NODE_W / 2}" y="${node.y - NODE_H / 2}" width="${NODE_W}" height="${NODE_H}" rx="10" />
+        <text x="${node.x}" y="${node.y + 5}" text-anchor="middle">${escapeText(node.label)}</text>
+      </g>`).join('')}
+    </svg>
+    <p class="flow-graph-note"><span class="flow-dot all"></span> 전체 공통 · <span class="flow-dot admin"></span> admin 전용 · <span class="flow-dot isolated"></span> 다른 화면과 연결 안 됨</p>`;
+  container.innerHTML = svg;
+  container.querySelectorAll('.flow-node').forEach((el) => {
+    const node = byId[el.dataset.id];
+    el.addEventListener('click', () => openStructureDialog(node));
+    el.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openStructureDialog(node); } });
+  });
+  container.querySelectorAll('.flow-edge').forEach((el, index) => {
+    const { edge } = edgePaths[index];
+    const from = byId[edge.from], to = byId[edge.to];
+    const open = () => openStructureDialog({ full: `${from.label} → ${to.label}`, access: from.access, note: edge.label });
+    el.addEventListener('click', open);
+    el.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); open(); } });
+  });
+}
 
 function renderSiteStructure() {
   const countNodes = (node) => 1 + (node.children || []).reduce((sum, child) => sum + countNodes(child), 0);
@@ -332,31 +453,6 @@ function renderSiteStructure() {
     ['admin 전용 메뉴', menus.filter((menu) => menu.access === 'admin').length], ['연결 데이터', tables.size], ['개선 포인트', siteInsights.length]
   ].map(([name, value]) => { const card = document.createElement('div'); card.innerHTML = '<strong></strong><span></span>'; card.querySelector('strong').textContent = value; card.querySelector('span').textContent = name; return card; }));
 
-  const dialog = document.querySelector('#structureDialog');
-  // 항목을 누르면 설명이 팝업으로 열림
-  const openNodeDialog = (node) => {
-    document.querySelector('#structureDialogEyebrow').textContent = node.access === 'admin' ? 'ADMIN 전용' : '전체 공통';
-    document.querySelector('#structureDialogTitle').textContent = node.full;
-    const body = document.querySelector('#structureDialogBody');
-    body.replaceChildren();
-    if (node.note) { const note = document.createElement('p'); note.className = 'dialog-note'; note.textContent = node.note; body.append(note); }
-    if (node.data?.length) {
-      const label = document.createElement('p'); label.className = 'dialog-label'; label.textContent = '연결된 데이터';
-      const chips = document.createElement('div'); chips.className = 'tree-data';
-      node.data.forEach((name) => { const chip = document.createElement('span'); chip.className = 'tag data'; chip.textContent = name; chips.append(chip); });
-      body.append(label, chips);
-    }
-    if (node.insight) {
-      const insight = siteInsights[node.insight - 1];
-      const box = document.createElement('div'); box.className = 'dialog-insight';
-      box.innerHTML = '<b></b><p></p><p class="insight-idea"></p>';
-      box.querySelector('b').textContent = `개선 포인트 ${node.insight}. ${insight.title}`;
-      box.querySelectorAll('p')[0].textContent = insight.text;
-      box.querySelector('.insight-idea').textContent = `검토할 점: ${insight.idea}`;
-      body.append(box);
-    }
-    dialog.showModal();
-  };
   const makeButton = (node) => {
     const button = document.createElement('button');
     button.type = 'button';
@@ -364,7 +460,7 @@ function renderSiteStructure() {
     button.textContent = node.label;
     if (node.insight) { const flag = document.createElement('span'); flag.className = 'insight-flag'; flag.textContent = node.insight; button.append(flag); }
     button.setAttribute('aria-label', `${node.full} 설명 보기`);
-    button.addEventListener('click', () => openNodeDialog(node));
+    button.addEventListener('click', () => openStructureDialog(node));
     return button;
   };
   // 위(사이트) → 가운데(메뉴) → 아래(세부 화면) 순서로 그림
@@ -382,6 +478,8 @@ function renderSiteStructure() {
     menuRow.append(menuItem);
   });
   chart.replaceChildren(root, menuRow);
+  renderSiteFlowGraph();
+  const dialog = document.querySelector('#structureDialog');
   if (!dialog.dataset.ready) {
     dialog.dataset.ready = '1';
     document.querySelector('#structureDialogClose').addEventListener('click', () => dialog.close());
@@ -451,7 +549,7 @@ function renderProducts(keyword = '') {
     const values = [
       product.code,
       product.name,
-      product.product_costs?.[0]?.purchase_price === undefined ? '—' : `${Number(product.product_costs[0].purchase_price).toLocaleString('ko-KR')}원`,
+      getProductCost(product)?.purchase_price === undefined ? '—' : `${Number(getProductCost(product).purchase_price).toLocaleString('ko-KR')}원`,
       totals.opening.toLocaleString('ko-KR'),
       totals.received.toLocaleString('ko-KR'),
       totals.issued.toLocaleString('ko-KR'),
@@ -471,6 +569,53 @@ function prepareInventoryLedger() {
   ledgerMonth.disabled = months.length === 0;
   renderProducts(productSearch.value);
 }
+
+function renderCostLookup(keyword = '') {
+  const query = keyword.trim();
+  if (!query) {
+    costLookupTableWrap.hidden = true;
+    costLookupMessage.hidden = false;
+    costLookupMessage.textContent = '상품명이나 초성을 입력하거나 마이크를 눌러 말하면 매입단가를 보여드립니다.';
+    return;
+  }
+  const matched = products.filter((product) => matchesProduct(product, query)).slice(0, 30);
+  if (!matched.length) {
+    costLookupTableWrap.hidden = true;
+    costLookupMessage.hidden = false;
+    costLookupMessage.textContent = '일치하는 상품이 없습니다. 상품명이나 초성을 다시 입력해 주세요.';
+    return;
+  }
+  costLookupMessage.hidden = true;
+  costLookupTableWrap.hidden = false;
+  costLookupRows.replaceChildren(...matched.map((product) => {
+    const cost = getProductCost(product);
+    const supplierName = cost?.supplier_name_raw || suppliers.find((supplier) => supplier.id === product.supplier_id)?.name || '—';
+    const priceText = cost ? `${Number(cost.purchase_price).toLocaleString('ko-KR')}원` : '등록된 매입단가 없음';
+    const listPriceText = cost?.list_price != null ? `${Number(cost.list_price).toLocaleString('ko-KR')}원` : '—';
+    const enteredText = cost ? (cost.updated_at ? cost.updated_at.slice(0, 10) : '최초 등록값(일자 미확인)') : '—';
+    const row = document.createElement('tr');
+    [product.name, supplierName, priceText, listPriceText, enteredText].forEach((value) => {
+      const cell = document.createElement('td'); cell.textContent = value; row.append(cell);
+    });
+    return row;
+  }));
+}
+
+function prepareCostLookup() {
+  costLookupSearch.disabled = false;
+  costLookupMicButton.disabled = !costLookupRecognition;
+  costLookupSearch.value = '';
+  renderCostLookup('');
+}
+
+costLookupSearch.addEventListener('input', () => renderCostLookup(costLookupSearch.value));
+costLookupMicButton.addEventListener('click', () => {
+  if (!costLookupRecognition) return;
+  costLookupMicButton.classList.add('listening');
+  costLookupMessage.hidden = false;
+  costLookupMessage.textContent = '듣는 중... 상품명을 말씀해 주세요.';
+  try { costLookupRecognition.start(); } catch { costLookupMicButton.classList.remove('listening'); }
+});
 
 const legacySalesMonth = document.querySelector('#legacySalesMonth');
 const legacySalesSearch = document.querySelector('#legacySalesSearch');
@@ -1252,6 +1397,13 @@ async function loadInventoryMovements() {
   inventoryMovements = rows;
 }
 
+// product_costs.product_id가 기본키라 PostgREST가 배열이 아니라 객체 하나로 내려준다.
+// 배열로 올 가능성도 함께 방어한다.
+function getProductCost(product) {
+  const pc = product.product_costs;
+  return Array.isArray(pc) ? pc[0] : pc;
+}
+
 function getKoreanInitials(value = '') {
   const initials = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ';
   return [...value].map((character) => {
@@ -1311,7 +1463,19 @@ function closeProductSuggestions() {
 function selectSaleProduct(product) {
   saleProductValue.value = product.code;
   saleProductSearch.value = product.name;
-  saleProductHint.textContent = `${product.code} · ${Number(product.sale_price).toLocaleString('ko-KR')}원 · 현재 재고 ${product.product_stock?.[0]?.quantity ?? '—'}개`;
+  const hasPrice = Number(product.sale_price) > 0;
+  const listPrice = getProductCost(product)?.list_price;
+  const stockText = `현재 재고 ${product.product_stock?.[0]?.quantity ?? '—'}개`;
+  if (hasPrice) {
+    document.querySelector('#salePrice').value = product.sale_price;
+    saleProductHint.textContent = `${product.code} · ${Number(product.sale_price).toLocaleString('ko-KR')}원 · ${stockText}`;
+  } else if (listPrice != null) {
+    document.querySelector('#salePrice').value = listPrice;
+    saleProductHint.textContent = `${product.code} · 공항가격 ${Number(listPrice).toLocaleString('ko-KR')}원을 제안가격으로 채웠습니다. 다르면 고쳐서 입력하세요. · ${stockText}`;
+  } else {
+    document.querySelector('#salePrice').value = '';
+    saleProductHint.textContent = `${product.code} · 판매가가 등록되어 있지 않습니다. 판매가를 입력해 주세요. · ${stockText}`;
+  }
   closeProductSuggestions();
   document.querySelector('#saleQuantity').focus();
   document.querySelector('#saleQuantity').select();
@@ -2176,7 +2340,7 @@ document.querySelector('#backupProducts').addEventListener('click', (event) => r
     { label: '상품명', get: (r) => r.name },
     { label: '분류', get: (r) => r.product_categories?.name },
     { label: '판매가', get: (r) => r.sale_price },
-    { label: '매입가', get: (r) => r.product_costs?.[0]?.purchase_price },
+    { label: '매입가', get: (r) => getProductCost(r)?.purchase_price },
     { label: '현재재고', get: (r) => r.track_stock ? (r.product_stock?.[0]?.quantity ?? 0) : '' },
   ], products);
 }));
@@ -2274,7 +2438,7 @@ async function loadDashboard() {
   if (!sales.length) {
     setDashboardValue(0, '0원', '등록된 판매가 없습니다');
     setDashboardValue(1, '0건', '등록된 판매가 없습니다');
-    await showStockAlert(null);
+    setDashboardValue(2, '0원', '등록된 판매가 없습니다');
     setDashboardValue(3, '—', '판매 데이터 연결 후 표시');
     return;
   }
@@ -2286,11 +2450,12 @@ async function loadDashboard() {
   const monthTotal = monthSales.reduce((sum, sale) => sum + Number(sale.total_amount), 0);
   setDashboardValue(0, `${todayTotal.toLocaleString('ko-KR')}원`, `${latestDay} 최신 영업일 기준`);
   setDashboardValue(1, `${todaySales.length}건`, `${latestDay} 최신 영업일 기준`);
-  await showStockAlert(latestDay);
   if (currentProfile?.role !== 'admin' || !latestMonth) {
+    setDashboardValue(2, '—', '관리자 전용 지표');
     setDashboardValue(3, '—', '관리자 전용 지표');
     return;
   }
+  await showProfitCard(latestMonth);
   // 마진율 = (매출 - 원가) / 매출. 최근 판매월과 그 전달을 함께 계산해 증감을 보여줌
   const marginOfMonth = async (month, revenue) => {
     const [year, monthNumber] = month.split('-').map(Number);
@@ -2314,42 +2479,22 @@ async function loadDashboard() {
   }
 }
 
-// 최근 4주 판매 속도로 계산해 7일 안에 떨어질 상품 수를 보여줌 (판매가 늘면 숫자도 늘어남)
-async function showStockAlert(latestDay) {
-  const tracked = products.filter((product) => product.track_stock);
-  const stockOf = (product) => Number(product.product_stock?.[0]?.quantity ?? 0);
-  let soldByProduct = null;
+// 이번 달 매출총이익(매출 - 매입원가) = 판매 수익. 관리자만 원가 데이터를 볼 수 있어 admin 전용.
+async function showProfitCard(latestMonth) {
   try {
-    const since = addDays(latestDay, -27);
-    const rows = await apiAll(`sale_items?select=product_id,quantity,sales!inner(sold_at,status)&sales.status=eq.completed&sales.sold_at=gte.${since}`);
-    soldByProduct = rows.reduce((result, row) => {
-      result.set(row.product_id, (result.get(row.product_id) || 0) + Number(row.quantity));
-      return result;
-    }, new Map());
+    const [year, monthNumber] = latestMonth.split('-').map(Number);
+    const nextMonth = `${year + (monthNumber === 12 ? 1 : 0)}-${String(monthNumber === 12 ? 1 : monthNumber + 1).padStart(2, '0')}-01`;
+    const rows = await apiAll(`v_sale_items_profit?select=amount,cost_amount&status=eq.completed&sold_at=gte.${latestMonth}-01&sold_at=lt.${nextMonth}`);
+    const profit = rows.reduce((sum, item) => sum + (Number(item.amount) - Number(item.cost_amount)), 0);
+    setDashboardValue(2, `${profit.toLocaleString('ko-KR')}원`, `${latestMonth} 매출총이익(매출-매입원가)`);
   } catch (error) {
-    soldByProduct = null;
+    setDashboardValue(2, '—', '원가 데이터 확인 필요');
   }
-  if (!soldByProduct) {
-    // 판매 기록을 못 읽으면 기존처럼 재고 5개 이하로 계산
-    const low = tracked.filter((product) => stockOf(product) <= 5);
-    setDashboardValue(2, `${low.length}개`, '재고 5개 이하 상품');
-    return;
-  }
-  const risky = tracked.map((product) => {
-    const dailySales = (soldByProduct.get(product.id) || 0) / 28;
-    const stock = stockOf(product);
-    return { name: product.name, stock, days: dailySales > 0 ? stock / dailySales : null };
-  }).filter((item) => item.stock <= 0 || (item.days !== null && item.days < 7))
-    .sort((a, b) => (a.days ?? 0) - (b.days ?? 0));
-  const first = risky[0];
-  setDashboardValue(2, `${risky.length}개`, first
-    ? `7일 안에 소진 예상 · 가장 급한 상품: ${first.name}${first.days === null ? '' : ` (${first.days.toFixed(1)}일)`}`
-    : '7일 안에 소진될 상품 없음');
 }
 
 async function refreshProductsAfterSale() {
   try {
-    products = await apiAll('products?select=id,code,name,sale_price,track_stock,product_stock(quantity),product_costs(purchase_price),product_categories(name)&order=code');
+    products = await apiAll('products?select=id,code,name,sale_price,track_stock,supplier_id,product_stock(quantity),product_costs(purchase_price,updated_at,list_price,supplier_name_raw),product_categories(name)&order=code');
   } catch {
     throw new Error('최신 재고 정보를 불러오지 못했습니다.');
   }
@@ -2386,6 +2531,7 @@ function prepareSales() {
   saleProductSearch.value = '';
   saleProductHint.textContent = '상품명·코드·초성을 입력하거나 입력창을 눌러 추천 상품을 확인하세요.';
   document.querySelector('#saleQuantity').disabled = false;
+  document.querySelector('#salePrice').disabled = false;
   saleDate.disabled = false;
   saleDate.max = getLocalDate();
   saleDate.value = getLocalDate();
@@ -2844,7 +2990,7 @@ async function completeLogin(session) {
   accessToken = session.access_token;
   currentUser = session.user;
   try {
-    products = await apiAll('products?select=id,code,name,sale_price,track_stock,product_stock(quantity),product_costs(purchase_price),product_categories(name)&order=code');
+    products = await apiAll('products?select=id,code,name,sale_price,track_stock,supplier_id,product_stock(quantity),product_costs(purchase_price,updated_at,list_price,supplier_name_raw),product_categories(name)&order=code');
   } catch {
     throw new Error('상품 정보를 불러오지 못했습니다.');
   }
@@ -2878,6 +3024,7 @@ async function completeLogin(session) {
     try {
       await Promise.all([loadSuppliers(), loadInventoryMovements()]);
       preparePurchases();
+      prepareCostLookup();
       prepareInventoryLedger();
     } catch (error) {
       document.querySelector('#purchaseMessage').textContent = error.message;
@@ -3145,18 +3292,22 @@ document.querySelector('#loginForm').addEventListener('submit', async (event) =>
 document.querySelector('#addSaleItem').addEventListener('click', () => {
   const selected = products.find((product) => product.code === saleProductValue.value);
   const quantity = Number(document.querySelector('#saleQuantity').value);
+  const salePriceInput = document.querySelector('#salePrice');
+  const price = Number(salePriceInput.value);
   if (!selected) { saleProductSearch.focus(); saleProductHint.textContent = '목록에서 상품을 하나 선택해 주세요.'; return; }
   if (!Number.isFinite(quantity) || quantity <= 0) { document.querySelector('#saleQuantity').focus(); return; }
+  if (salePriceInput.value === '' || !Number.isFinite(price) || price < 0) { salePriceInput.focus(); saleProductHint.textContent = '판매가를 입력해 주세요.'; return; }
   const petLabel = salePetSearch.value.trim();
   const petId = petLabel ? salePetDirectory.get(petLabel) || null : null;
-  const existing = saleItems.find((item) => item.id === selected.id && item.petId === petId);
+  const existing = saleItems.find((item) => item.id === selected.id && item.petId === petId && item.sale_price === price);
   if (existing) existing.quantity += quantity;
-  else saleItems.push({ ...selected, quantity, petId, petLabel: petId ? petLabel : null });
+  else saleItems.push({ ...selected, sale_price: price, quantity, petId, petLabel: petId ? petLabel : null });
   rememberProduct(selected);
   renderSale();
   saleProductValue.value = '';
   saleProductSearch.value = '';
   document.querySelector('#saleQuantity').value = 1;
+  salePriceInput.value = '';
   saleProductHint.textContent = '다음 상품을 입력하세요. 최근 선택 상품은 입력창을 누르면 다시 표시됩니다.';
   saleProductSearch.focus();
 });
@@ -3191,6 +3342,14 @@ purchaseUnitCost.addEventListener('keydown', (event) => {
 document.querySelector('#saleQuantity').addEventListener('keydown', (event) => {
   if (event.key === 'Enter') {
     event.preventDefault();
+    document.querySelector('#salePrice').focus();
+    document.querySelector('#salePrice').select();
+  }
+});
+
+document.querySelector('#salePrice').addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
     document.querySelector('#addSaleItem').click();
   }
 });
@@ -3202,7 +3361,7 @@ document.querySelector('#submitSale').addEventListener('click', async () => {
     const response = await fetch(`${config.supabaseUrl}/rest/v1/rpc/rpc_create_sale`, {
       method: 'POST',
       headers: { apikey: config.supabasePublishableKey, Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ p_idempotency_key: crypto.randomUUID(), p_payment_method: document.querySelector('#paymentMethod').value, p_items: saleItems.map((item) => ({ product_id: item.id, quantity: item.quantity, pet_id: item.petId || null })), ...(saleDate.value !== getLocalDate() ? { p_sold_at: saleDate.value } : {}) })
+      body: JSON.stringify({ p_idempotency_key: crypto.randomUUID(), p_payment_method: document.querySelector('#paymentMethod').value, p_items: saleItems.map((item) => ({ product_id: item.id, quantity: item.quantity, pet_id: item.petId || null, unit_price: item.sale_price })), ...(saleDate.value !== getLocalDate() ? { p_sold_at: saleDate.value } : {}) })
     });
     if (!response.ok) {
       const errorBody = await response.json().catch(() => ({}));
