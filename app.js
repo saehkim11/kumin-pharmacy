@@ -2843,6 +2843,27 @@ function isVaccineText(text) {
   return VACCINE_KEYWORDS.some((kw) => text.includes(kw));
 }
 
+// 보호자 연락처는 DB에 숫자만 저장된 기존 자료가 많다. 휴대전화로 판단되는 값만 읽기 쉬운
+// 형식으로 보여주고, 지역번호·해외 번호처럼 확신할 수 없는 값은 원문을 그대로 둔다.
+function formatOwnerPhone(phone) {
+  const raw = String(phone ?? '').trim();
+  if (!raw) return '—';
+  const digits = raw.replace(/\D/g, '');
+  const mobile = digits.startsWith('8210') ? `0${digits.slice(2)}`
+    : (digits.startsWith('10') && digits.length === 10 ? `0${digits}` : digits);
+  if (!/^01[016789]\d{7,8}$/.test(mobile)) return raw;
+  if (mobile.length === 11) return `${mobile.slice(0, 3)}-${mobile.slice(3, 7)}-${mobile.slice(7)}`;
+  if (mobile.length === 10) return `${mobile.slice(0, 3)}-${mobile.slice(3, 6)}-${mobile.slice(6)}`;
+  return raw;
+}
+
+// 현재 상세 조회가 이미 안전하게 돌려주는 지역명만 표시한다. 스키마를 추정해 추가 조회하지 않는다.
+function getOwnerRegion(detail) {
+  return ['owner_region', 'owner_area', 'owner_district']
+    .map((key) => String(detail?.[key] ?? '').trim())
+    .find(Boolean) || '';
+}
+
 // 날짜가 있는 방문·접종 이력과, 날짜 없이 메모로만 남은 옛 진료기록을 한 화면에 합쳐서
 // 날짜별로 진료기록/접종기록 두 칸에 나눠 담은 표로 보여준다. notes는 여러 방문이 이어붙은
 // 메모라서 날짜 있는 기록과 내용이 겹치는 줄은 빼고, 없는 줄만 "날짜 미상"으로 추가한다.
@@ -2889,11 +2910,14 @@ function renderPetTimeline(visits, notes) {
   petTimeline.replaceChildren(...rows.map((row) => {
     const tr = document.createElement('tr');
     const dateCell = document.createElement('td');
+    dateCell.className = 'pet-timeline-date';
     dateCell.textContent = row.date || '날짜 미상';
     const treatmentCell = document.createElement('td');
+    treatmentCell.className = 'pet-timeline-care';
     treatmentCell.textContent = row.treatment.join(' · ') || '—';
     if (!row.treatment.length) treatmentCell.classList.add('is-empty');
     const vaccineCell = document.createElement('td');
+    vaccineCell.className = 'pet-timeline-vaccine';
     vaccineCell.textContent = row.vaccine.join(' · ') || '—';
     if (!row.vaccine.length) vaccineCell.classList.add('is-empty');
     tr.append(dateCell, treatmentCell, vaccineCell);
@@ -2905,9 +2929,11 @@ function renderPetDetail(detail, visits, purchases = []) {
   petDetailPanel.hidden = false;
   petDetailPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
   petDetailName.textContent = `${detail.pet_name} (${petSpeciesLabel[detail.species] || detail.species}${detail.breed ? ' · ' + detail.breed : ''})`;
+  const ownerRegion = getOwnerRegion(detail);
   const fields = [
     ['보호자', detail.owner_name || '—'],
-    ['연락처', detail.owner_phone || '—'],
+    ['연락처', formatOwnerPhone(detail.owner_phone)],
+    ...(ownerRegion ? [['지역', ownerRegion]] : []),
     ['성별', `${petSexLabel[detail.sex] || '미상'}${detail.neutered ? ' (중성화)' : ''}`],
     ['생년월일', detail.birth_date || '—'],
     ['체중', detail.weight_kg ? `${detail.weight_kg}kg` : '—'],
