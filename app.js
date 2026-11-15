@@ -1618,6 +1618,8 @@ function renderDashboardNews(items) {
   });
     if (group.querySelector('.dashboard-news-item')) list.append(group);
   });
+  const renderedCount = list.querySelectorAll('.dashboard-news-item').length;
+  list.classList.toggle('show-all-news-items', renderedCount > 0 && renderedCount <= 5);
   if (!list.childElementCount) list.innerHTML = '<p class="empty-message">원문 링크를 안전하게 확인하는 중입니다. 확인 전에는 외부 링크를 표시하지 않습니다.</p>';
 }
 
@@ -1637,7 +1639,7 @@ async function loadDashboardNews() {
     renderDashboardNews(items);
     const note = document.querySelector('#dashboardNewsNote');
     document.querySelector('#dashboardNews').hidden = false;
-    if (note && payload.updatedAt) note.textContent = `정책 1 · 건강 리포트 2 · 전문가 최신 글 2 · 최근 확인 ${payload.updatedAt.replaceAll('-', '.')} · 파일 내려받기·미확인 링크는 표시하지 않습니다.`;
+    if (note && payload.updatedAt) note.textContent = `정책·복지 3 · 국내 반려동물·수의학 새 글 2 · 최근 확인 ${payload.updatedAt.replaceAll('-', '.')} · 파일 내려받기·미확인 링크는 표시하지 않습니다.`;
   } catch {
     dashboardNewsLoaded = false;
     renderDashboardNews([]);
