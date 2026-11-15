@@ -1,11 +1,14 @@
 // Customer complaints: selecting B must keep B's details; failed history is not an empty history.
 const { chromium } = require('playwright');
 const fs = require('node:fs');
+const path = require('node:path');
 const assert = require('node:assert/strict');
 
 async function runPetComplaintReview() {
   let accounts;
-  try { accounts = JSON.parse(fs.readFileSync('test-accounts.local.json', 'utf8')).accounts; }
+  const accountsFile = process.env.TEST_ACCOUNTS_FILE || path.join(process.cwd(), 'test-accounts.local.json');
+  const baseUrl = process.env.TEST_BASE_URL || 'http://127.0.0.1:4173';
+  try { accounts = JSON.parse(fs.readFileSync(accountsFile, 'utf8')).accounts; }
   catch { throw new Error('Test accounts unavailable (contents omitted).'); }
   const browser = await chromium.launch();
   const A = '00000000-0000-0000-0000-0000000000a1';
@@ -28,7 +31,7 @@ async function runPetComplaintReview() {
           const id = request.postDataJSON().p_pet_id;
           await new Promise(resolve => setTimeout(resolve, id === A ? 750 : 30));
           if (detailFailureA && id === A) return route.fulfill({ status: 503, json: {} });
-          return route.fulfill({ json: [{ pet_id: id, pet_name: id === A ? '검수 하나' : '검수 둘', owner_name: '검수 보호자', species: 'dog', notes: '' }] });
+          return route.fulfill({ json: [{ pet_id: id, pet_name: id === A ? '검수 하나' : '검수 둘', owner_name: '검수 보호자', owner_phone: id === B ? '1012345678' : '0212345678', species: 'dog', notes: '' }] });
         }
         if (['POST', 'PATCH', 'PUT', 'DELETE'].includes(request.method())) {
           blockedWrites += 1;
@@ -38,7 +41,10 @@ async function runPetComplaintReview() {
           { id: A, name: '검수 하나', species: 'dog', owner: { name: '검수 보호자' } },
           { id: B, name: '검수 둘', species: 'dog', owner: { name: '검수 보호자' } },
         ] });
-        if (resource === 'pet_visits') return route.fulfill(visitFailure ? { status: 503, json: {} } : { json: [] });
+        if (resource === 'pet_visits') return route.fulfill(visitFailure ? { status: 503, json: {} } : { json: [
+          { visit_date: '2026-11-14', record: '피부 진료', detail: '경과 관찰' },
+          { visit_date: '2026-11-13', record: '종합백신 접종', detail: '' },
+        ] });
         if (resource === 'sale_items' && url.searchParams.has('pet_id')) {
           if (historyFailure) return route.fulfill({ status: 503, json: {} });
           if (emptyHistory) return route.fulfill({ json: [] });
@@ -49,7 +55,7 @@ async function runPetComplaintReview() {
       });
       try {
         const account = accounts.find(a => a.role === role);
-        await page.goto('http://127.0.0.1:4173/');
+        await page.goto(`${baseUrl}/`);
         await page.locator('#loginButton').click();
         await page.locator('#email').fill(account.email);
         await page.locator('#password').fill(account.password);
@@ -70,6 +76,14 @@ async function runPetComplaintReview() {
       assert.match(await page.locator('#petDetailName').textContent(), /검수 둘/);
       assert.match(await page.locator('#petPurchaseRows').textContent(), /B 검수 구매품/);
       assert.doesNotMatch(await page.locator('#petPurchaseRows').textContent(), /A 검수 구매품/);
+      assert.match(await page.locator('#petDetailInfo').textContent(), /010-1234-5678/, '숫자만 저장된 휴대전화는 보기 좋게 표시한다');
+      assert.equal(await page.locator('#petTimeline tr').count(), 2);
+      const timelineAlignment = await page.locator('#petTimeline tr').evaluateAll((rows) => rows.map((row) => [...row.cells].map((cell) => ({ text: cell.textContent, align: getComputedStyle(cell).textAlign }))));
+      assert.equal(timelineAlignment[0][0].align, 'center', '날짜는 가운데 정렬한다');
+      assert.equal(timelineAlignment[0][1].align, 'left', '내용이 있는 진료 기록은 좌측 정렬한다');
+      assert.equal(timelineAlignment[0][2].align, 'center', '없는 접종 기록의 대시는 가운데 정렬한다');
+      assert.equal(timelineAlignment[1][1].align, 'center', '없는 진료 기록의 대시는 가운데 정렬한다');
+      assert.equal(timelineAlignment[1][2].align, 'left', '내용이 있는 접종 기록은 좌측 정렬한다');
       assert.equal(await page.evaluate(id => selectedPetId === id, B), true);
 
       await choose('검수 하나');
