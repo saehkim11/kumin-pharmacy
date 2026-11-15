@@ -22,7 +22,7 @@
           <button class="nav-button" data-view="purchases" id="purchaseNav" hidden>입고 관리</button>
           <button class="nav-button" data-view="tasks">공유 업무</button>
           <button class="nav-button" data-view="analytics">분석</button>
-          <button class="nav-button" data-view="legacySales" id="legacySalesNav" hidden>매출관리</button>
+          <button class="nav-button" data-view="legacySales" id="legacySalesNav" hidden>매출 분석</button>
           <button class="nav-button" data-view="messaging" id="messagingNav" hidden>메시지 발송 (검토 중)</button>
           <button class="nav-button" data-view="structure" id="structureNav" hidden>사이트 구조</button>
         </nav>
@@ -121,7 +121,8 @@
               <p class="empty-message" id="salePetHistoryEmpty" hidden>구매 이력이 없습니다.</p>
             </section>
             <section class="sales-history" id="salesHistorySection" aria-labelledby="salesHistoryTitle">
-              <div class="stock-lookup-heading"><div><p class="eyebrow">SALES LEDGER</p><h3 id="salesHistoryTitle">월별 판매 내역</h3></div></div>
+              <div class="stock-lookup-heading"><div><p class="eyebrow">SALES LEDGER</p><h3 id="salesHistoryTitle">판매 기록 조회</h3></div></div>
+              <p class="section-guide">위에서 등록한 판매와 가져온 엑셀 자료를 월별로 함께 확인합니다. 새 판매는 위의 <strong>판매 목록에 담기</strong>에서 시작하세요.</p>
               <div class="history-tabs" role="tablist" aria-label="판매 내역 보기 방식">
                 <button type="button" role="tab" class="history-tab active" data-history-view="daily" aria-selected="true">일자별</button>
                 <button type="button" role="tab" class="history-tab" data-history-view="product" aria-selected="false">품목별</button>
@@ -256,7 +257,8 @@
 
         <section class="view" id="legacySales">
           <section class="panel">
-            <p class="eyebrow">LEGACY SALES LEDGER</p><h2>매출관리</h2>
+            <p class="eyebrow">SALES ANALYSIS</p><h2>매출 분석</h2>
+            <p class="section-guide">가져온 과거 매출 자료의 추이와 수익성을 살펴보는 화면입니다. 새 판매 등록과 판매 기록 조회는 <strong>판매 관리</strong>에서 처리하세요.</p>
             <p class="empty-message" id="legacySalesSummary">불러오는 중...</p>
             <div class="toolbar legacy-sales-toolbar">
               <div><label for="legacySalesMonth">조회 월</label><select id="legacySalesMonth"></select></div>
