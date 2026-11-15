@@ -8,7 +8,10 @@
     "test": "tests"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "qa:static": "node --check app.js && node tests/dashboard-news-safety.cjs",
+    "qa:smoke": "playwright test --config=playwright.ci.config.js",
+    "qa:ci": "npm run qa:static && npm run qa:smoke",
+    "test": "npm run qa:ci"
   },
   "keywords": [],
   "author": "",

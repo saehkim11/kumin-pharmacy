@@ -15,7 +15,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  qa:
+    uses: ./.github/workflows/qa.yml
+
   build:
+    needs: qa
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
