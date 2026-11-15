@@ -5,7 +5,8 @@ const path = require('path');
 const workspace = path.resolve(__dirname, '..');
 const news = JSON.parse(fs.readFileSync(path.join(workspace, 'data', 'dashboard-news.json'), 'utf8'));
 const allowedOrigins = new Set([
-  'https://www.mafra.go.kr', 'https://news.seoul.go.kr', 'https://www.koreadognews.co.kr', 'https://www.dailyvet.co.kr'
+  'https://www.mafra.go.kr', 'https://news.seoul.go.kr', 'https://www.koreadognews.co.kr', 'https://www.dailyvet.co.kr',
+  'https://kvma.or.kr'
 ]);
 const blockedPath = /(download|export|\.csv$|\.xlsx?$|\.pdf$|\.zip$)/i;
 

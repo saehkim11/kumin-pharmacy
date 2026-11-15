@@ -21,8 +21,8 @@
           <button class="nav-button" data-view="pets">고객·반려동물 관리</button>
           <button class="nav-button" data-view="purchases" id="purchaseNav" hidden>입고 관리</button>
           <button class="nav-button" data-view="tasks">공유 업무</button>
-          <button class="nav-button" data-view="analytics">분석</button>
-          <button class="nav-button" data-view="legacySales" id="legacySalesNav" hidden>매출 분석</button>
+          <button class="nav-button" data-view="analytics" aria-label="수익 분석: 원가와 이익 점검">수익 분석</button>
+          <button class="nav-button" data-view="legacySales" id="legacySalesNav" hidden aria-label="매출 통계: 이전 매출 자료 조회">매출 통계</button>
           <button class="nav-button" data-view="messaging" id="messagingNav" hidden>메시지 발송 (검토 중)</button>
           <button class="nav-button" data-view="structure" id="structureNav" hidden>사이트 구조</button>
         </nav>
@@ -250,15 +250,15 @@
 
         <section class="view" id="analytics">
           <section class="panel">
-            <p class="eyebrow">ANALYTICS</p><h2>분석</h2>
-            <p class="empty-message">매출, 원가, 마진율, 재고 흐름을 데이터 연결 후 표시합니다.</p>
+            <p class="eyebrow">PROFIT ANALYSIS</p><h2>수익 분석</h2>
+            <p class="empty-message">현재 판매와 원가를 바탕으로 수익, 마진, 재고·발주 필요를 살펴봅니다.</p>
           </section>
         </section>
 
         <section class="view" id="legacySales">
           <section class="panel">
-            <p class="eyebrow">SALES ANALYSIS</p><h2>매출 분석</h2>
-            <p class="section-guide">가져온 과거 매출 자료의 추이와 수익성을 살펴보는 화면입니다. 새 판매 등록과 판매 기록 조회는 <strong>판매 관리</strong>에서 처리하세요.</p>
+            <p class="eyebrow">SALES STATISTICS</p><h2>매출 통계</h2>
+            <p class="view-purpose">이전에 가져온 엑셀 매출을 월·상품·요일별로 집계해 확인하는 화면입니다. 새 판매 등록은 <strong>판매 관리</strong>에서 합니다.</p>
             <p class="empty-message" id="legacySalesSummary">불러오는 중...</p>
             <div class="toolbar legacy-sales-toolbar">
               <div><label for="legacySalesMonth">조회 월</label><select id="legacySalesMonth"></select></div>

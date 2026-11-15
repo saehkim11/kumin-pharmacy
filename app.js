@@ -34,6 +34,8 @@ let analyticsRefreshError = '';
 let analyticsRequestVersion = 0;
 let selectedAnalyticsYear = '';
 let selectedAnalyticsMonth = null; // null이면 최근 판매월, 0이면 연초부터 누계, 1~12는 해당 월
+let selectedAnalyticsPeriodType = 'year';
+let selectedAnalyticsPeriodIndex = null;
 let analyticsWeather = [];
 let analyticsForecast = null;
 let analyticsForecastError = '';
@@ -1569,7 +1571,8 @@ function setDashboardValue(index, value, detail) {
 // 대시보드 알림은 외부 기사를 브라우저에서 직접 긁지 않고, 배포 때 확인한 공식 발표 목록만 읽는다.
 // 파일 내려받기와 허가되지 않은 외부 도메인은 뉴스 링크가 될 수 없다.
 const SAFE_NEWS_ORIGINS = new Set([
-  'https://www.mafra.go.kr', 'https://news.seoul.go.kr', 'https://www.koreadognews.co.kr', 'https://www.dailyvet.co.kr'
+  'https://www.mafra.go.kr', 'https://news.seoul.go.kr', 'https://www.koreadognews.co.kr', 'https://www.dailyvet.co.kr',
+  'https://kvma.or.kr'
 ]);
 const NEWS_SECTION_ORDER = ['policy', 'info'];
 const NEWS_SECTION_LABEL = { policy: '정책·복지 공지', info: '국내 반려동물·수의학 새 글' };
@@ -1714,9 +1717,7 @@ function buildWeatherEstimate(sales, saleItems, weather, forecast) {
 }
 
 function buildWeatherOutlook(sales, saleItems, weather, forecast, errorMessage = '') {
-  const history = [...weather].filter((day) => day.temp_max !== null && day.temp_max !== undefined).sort((a, b) => a.date.localeCompare(b.date)).slice(-7);
   const estimates = buildWeatherEstimate(sales, saleItems, weather, forecast);
-  const historyCards = history.map((day) => `<article class="weather-day observed"><span class="weather-icon">${weatherIcon(null, day.precipitation_mm)}</span><strong>${formatWeatherDate(day.date)}</strong><span>${Number(day.temp_min).toFixed(0)}° / ${Number(day.temp_max).toFixed(0)}°</span><small>${Number(day.precipitation_mm) > 0 ? `비 ${Number(day.precipitation_mm).toFixed(1)}mm` : '강수 없음'}</small></article>`).join('') || '<p class="weather-empty">표시할 실제 날씨 기록이 없습니다.</p>';
   const forecastCards = forecast === null
     ? '<p class="weather-empty">서울 예보를 불러오는 중입니다.</p>'
     : forecast?.length
@@ -1726,10 +1727,10 @@ function buildWeatherOutlook(sales, saleItems, weather, forecast, errorMessage =
     ? estimates.map((signal) => `<li><b>${signal.label} ${signal.forecastDays.length}일</b> · ${signal.categories.join('·')} 예상 추가 수요 ${signal.estimatedUnits.toLocaleString('ko-KR')}개 <span>(과거 유사 날씨 ${signal.evidenceDays}일 비교)</span></li>`).join('')
     : '<li>향후 7일에는 고온(28℃ 이상) 또는 강한 비(15mm 이상) 기준의 추가 수요 신호가 없습니다.</li>';
 
-  return `<section class="weather-outlook" aria-labelledby="weatherOutlookTitle"><div class="weather-outlook-heading"><div><p class="eyebrow">SEOUL WEATHER & DEMAND</p><h3 id="weatherOutlookTitle">날씨와 수요 참고</h3><p>서울 기준 · 실제 기록 7일과 향후 7일 예보를 비교합니다.</p></div><span>예보: Open-Meteo</span></div><div class="weather-columns"><section><h4>최근 기록 7일</h4><div class="weather-days">${historyCards}</div></section><section><h4>향후 예보 7일</h4><div class="weather-days">${forecastCards}</div></section></div><div class="weather-estimate"><strong>날씨 기반 추정</strong><ul>${estimateText}</ul><p>참고용 규칙 기반 추정이며, 발주·재고 결정은 실제 판매 및 재고와 함께 확인하세요.</p></div></section>`;
+  return `<section class="weather-outlook" aria-labelledby="weatherOutlookTitle"><div class="weather-outlook-heading"><div><p class="eyebrow">SEOUL WEATHER & DEMAND</p><h3 id="weatherOutlookTitle">향후 7일 날씨와 수요 참고</h3><p>서울 기준 예보입니다. 발주와 재고 확인에 참고하세요.</p></div><span>예보: Open-Meteo</span></div><div class="weather-days">${forecastCards}</div><div class="weather-estimate"><strong>날씨 기반 추정</strong><ul>${estimateText}</ul><p>참고용 규칙 기반 추정이며, 발주·재고 결정은 실제 판매 및 재고와 함께 확인하세요.</p></div></section>`;
 }
 
-// 판매량이 너무 적은 분류는 %가 크게 부풀려지므로, 이 기준 미만이면 증감률을 계산하지 않음
+// 판매량이 너무 적은 상품은 %가 크게 부풀려지므로, 이 기준 미만이면 증감률을 계산하지 않음
 const MIN_BASELINE_WEEKLY_UNITS = 3; // 평소(직전 4주) 주간 판매량 최소 기준
 const MIN_SEASON_WEEK_UNITS = 5;     // 성수기 1주 판매량 최소 기준
 const MIN_COMPARE_UNITS = 3;
@@ -1742,28 +1743,28 @@ function buildSeasonalAlerts(sales, saleItems, weather) {
   if (!latestDate) return { alerts: [], watchlist: [], latestDate: '', settings, hasComparison: false };
 
   const salesById = new Map(completedSales.map((sale) => [sale.id, sale.sold_at.slice(0, 10)]));
-  const categoryForProduct = new Map(products.map((product) => [product.id, product.product_categories?.name || '기타']));
+  const productById = new Map(products.map((product) => [product.id, product]));
+  const productName = (id) => productById.get(id)?.name || (String(id).startsWith('legacy-name:') ? String(id).slice('legacy-name:'.length) : '알 수 없는 상품');
   const rows = saleItems.map((item) => ({
     date: salesById.get(item.sale_id),
-    category: categoryForProduct.get(item.product_id) || '기타',
     quantity: Number(item.quantity),
     productId: item.product_id
   })).filter((item) => item.date);
-  const categories = [...new Set(rows.map((item) => item.category))];
+  const productIds = [...new Set(rows.map((item) => item.productId))];
   const priorAnchor = sameDayPreviousYear(latestDate);
   const weatherByDate = new Map(weather.map((item) => [item.date, item]));
   const currentWeather = weatherByDate.get(latestDate);
   const alerts = [];
 
-  function categoryUnits(category, start, end) {
-    return rows.reduce((sum, item) => sum + (item.category === category && item.date >= start && item.date <= end ? item.quantity : 0), 0);
+  function productUnits(productId, start, end) {
+    return rows.reduce((sum, item) => sum + (item.productId === productId && item.date >= start && item.date <= end ? item.quantity : 0), 0);
   }
 
-  categories.forEach((category) => {
+  productIds.forEach((productId) => {
     const candidateWeeks = Array.from({ length: 8 }, (_, index) => {
       const start = addDays(priorAnchor, settings.leadDays + index);
-      const units = categoryUnits(category, start, addDays(start, 6));
-      const baseline = categoryUnits(category, addDays(start, -28), addDays(start, -1)) / 4;
+      const units = productUnits(productId, start, addDays(start, 6));
+      const baseline = productUnits(productId, addDays(start, -28), addDays(start, -1)) / 4;
       return { start, units, baseline, increaseRate: baseline ? ((units - baseline) / baseline) * 100 : null };
     }).filter((candidate) => candidate.baseline >= MIN_BASELINE_WEEKLY_UNITS && candidate.units >= MIN_SEASON_WEEK_UNITS && candidate.increaseRate >= settings.threshold)
       .sort((a, b) => b.increaseRate - a.increaseRate);
@@ -1773,13 +1774,12 @@ function buildSeasonalAlerts(sales, saleItems, weather) {
     const seasonUnits = bestCandidate.units;
     const baselineUnits = bestCandidate.baseline;
 
-    const currentRecent = categoryUnits(category, addDays(latestDate, -13), latestDate);
-    const currentPrevious = categoryUnits(category, addDays(latestDate, -27), addDays(latestDate, -14));
-    const currentFourWeek = categoryUnits(category, addDays(latestDate, -27), latestDate);
+    const currentRecent = productUnits(productId, addDays(latestDate, -13), latestDate);
+    const currentPrevious = productUnits(productId, addDays(latestDate, -27), addDays(latestDate, -14));
+    const currentFourWeek = productUnits(productId, addDays(latestDate, -27), latestDate);
     const currentChange = currentPrevious ? ((currentRecent - currentPrevious) / currentPrevious) * 100 : null;
     const currentDailyAverage = currentRecent / 14;
-    const stock = products.filter((product) => categoryForProduct.get(product.id) === category && product.track_stock)
-      .reduce((sum, product) => sum + Number(product.product_stock?.[0]?.quantity || 0), 0);
+    const stock = productById.get(productId)?.track_stock ? Number(productById.get(productId).product_stock?.[0]?.quantity || 0) : 0;
     const stockDays = currentDailyAverage > 0 ? Math.floor(stock / currentDailyAverage) : null;
     const lastYearWeather = weatherByDate.get(lastYearStart);
     const temperatureDifference = currentWeather && lastYearWeather ? Math.abs(Number(currentWeather.temp_mean) - Number(lastYearWeather.temp_mean)) : null;
@@ -1788,7 +1788,7 @@ function buildSeasonalAlerts(sales, saleItems, weather) {
 
     const increaseRate = ((seasonUnits - baselineUnits) / baselineUnits) * 100;
     alerts.push({
-      category, lastYearStart, seasonUnits, baselineUnits, increaseRate, currentChange, currentFourWeek, stock, stockDays,
+      productName: productName(productId), lastYearStart, seasonUnits, baselineUnits, increaseRate, currentChange, currentFourWeek, stock, stockDays,
       weatherText: lastYearWeather && currentWeather
         ? `작년 ${Number(lastYearWeather.temp_mean).toFixed(1)}°C/${Number(lastYearWeather.precipitation_mm || 0).toFixed(1)}mm · 최근 ${Number(currentWeather.temp_mean).toFixed(1)}°C/${Number(currentWeather.precipitation_mm || 0).toFixed(1)}mm`
         : '비교 가능한 날씨 기록이 부족합니다.',
@@ -1797,13 +1797,12 @@ function buildSeasonalAlerts(sales, saleItems, weather) {
     });
   });
 
-  const watchlist = categories.map((category) => {
-    const currentWeek = categoryUnits(category, addDays(latestDate, -6), latestDate);
-    const previousYearWeek = categoryUnits(category, addDays(priorAnchor, -6), priorAnchor);
+  const watchlist = productIds.map((productId) => {
+    const currentWeek = productUnits(productId, addDays(latestDate, -6), latestDate);
+    const previousYearWeek = productUnits(productId, addDays(priorAnchor, -6), priorAnchor);
     const changeRate = previousYearWeek >= MIN_COMPARE_UNITS ? ((currentWeek - previousYearWeek) / previousYearWeek) * 100 : null;
-    const stock = products.filter((product) => categoryForProduct.get(product.id) === category && product.track_stock)
-      .reduce((sum, product) => sum + Number(product.product_stock?.[0]?.quantity || 0), 0);
-    return { category, currentWeek, previousYearWeek, changeRate, stock };
+    const stock = productById.get(productId)?.track_stock ? Number(productById.get(productId).product_stock?.[0]?.quantity || 0) : 0;
+    return { productName: productName(productId), currentWeek, previousYearWeek, changeRate, stock };
   }).filter((item) => item.currentWeek || item.previousYearWeek)
     .sort((a, b) => Math.abs(b.changeRate || 0) - Math.abs(a.changeRate || 0) || b.currentWeek - a.currentWeek)
     .slice(0, 4);
@@ -1814,34 +1813,49 @@ function buildSeasonalAlerts(sales, saleItems, weather) {
 // ---------- 분석 화면: 이익·마진율 중심 수익성 분석 ----------
 const MIN_PRODUCT_REVENUE = 200000; // 상품 순위에 넣을 최소 매출(원). 판매가 너무 적은 상품은 마진율이 왜곡됨
 
-const ANALYTICS_SOURCES = { all: '전체 판매', registered: '판매 등록', legacy: '엑셀 과거 판매' };
+const ANALYTICS_PERIOD_TYPES = { month: '월별', quarter: '분기별', half: '반기별', year: '연도별' };
 
-function analyticsSourceControls() {
-  const scopeNote = analyticsSource === 'registered'
-    ? '판매 관리에서 등록 완료한 판매만 조회합니다.'
-    : `${analyticsSource === 'legacy' ? '엑셀 과거 판매만 조회합니다.' : '판매 등록과 엑셀 과거 판매를 함께 조회합니다.'} 엑셀은 영수증 번호가 없어 품목 한 줄을 한 기록으로 셉니다.`;
-  return `<div class="analytics-source-controls"><label for="analyticsSource">자료 범위<select id="analyticsSource">${Object.entries(ANALYTICS_SOURCES).map(([value, label]) => `<option value="${value}" ${analyticsSource === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label><p class="analytics-scope-note">${scopeNote}</p></div><p class="analytics-refresh-message" id="analyticsRefreshMessage" role="status">${escapeText(analyticsRefreshError)}</p>`;
+function analyticsPeriodOptions(type, maxMonth) {
+  if (type === 'month') return Array.from({ length: maxMonth }, (_, i) => [i + 1, `${i + 1}월`]);
+  if (type === 'quarter') return Array.from({ length: Math.ceil(maxMonth / 3) }, (_, i) => [i + 1, `${i + 1}분기`]);
+  if (type === 'half') return Array.from({ length: Math.ceil(maxMonth / 6) }, (_, i) => [i + 1, `${i + 1}반기`]);
+  return [[1, '연간']];
+}
+
+function analyticsPeriodControls(maxMonth = 12) {
+  const options = analyticsPeriodOptions(selectedAnalyticsPeriodType, maxMonth);
+  if (!options.some(([value]) => value === selectedAnalyticsPeriodIndex)) selectedAnalyticsPeriodIndex = options.at(-1)[0];
+  return `<label for="analyticsPeriodType">집계 단위<select id="analyticsPeriodType">${Object.entries(ANALYTICS_PERIOD_TYPES).map(([value, label]) => `<option value="${value}" ${selectedAnalyticsPeriodType === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label><label for="analyticsPeriodIndex">조회 기간<select id="analyticsPeriodIndex">${options.map(([value, label]) => `<option value="${value}" ${selectedAnalyticsPeriodIndex === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label>`;
+}
+
+function analyticsSourceControls(maxMonth = 12) {
+  return `<div class="analytics-source-controls">${analyticsPeriodControls(maxMonth)}<p class="analytics-scope-note">등록된 모든 판매 기록을 합쳐 표시합니다.</p></div><p class="analytics-refresh-message" id="analyticsRefreshMessage" role="status">${escapeText(analyticsRefreshError)}</p>`;
 }
 
 function bindAnalyticsSource() {
-  document.querySelector('#analyticsSource')?.addEventListener('change', event => {
-    analyticsSource = event.target.value;
-    applyAnalyticsSource();
+  document.querySelector('#analyticsPeriodType')?.addEventListener('change', event => {
+    selectedAnalyticsPeriodType = event.target.value;
+    selectedAnalyticsPeriodIndex = null;
+    renderAnalytics(analyticsSales, analyticsSaleItems);
+  });
+  document.querySelector('#analyticsPeriodIndex')?.addEventListener('change', event => {
+    selectedAnalyticsPeriodIndex = Number(event.target.value);
+    renderAnalytics(analyticsSales, analyticsSaleItems);
   });
 }
 
 function applyAnalyticsSource() {
-  const includeRegistered = analyticsSource !== 'legacy';
-  const includeLegacy = analyticsSource !== 'registered';
-  const registeredSales = includeRegistered ? analyticsRaw.sales.map(row => ({ ...row, id: `sale:${row.id}`, source: 'registered' })) : [];
+  // 과거 입력 자료와 현재 등록 자료를 모두 같은 판매 기록으로 보여준다.
+  analyticsSource = 'all';
+  const registeredSales = analyticsRaw.sales.map(row => ({ ...row, id: `sale:${row.id}`, source: 'registered' }));
   const registeredIds = new Set(analyticsRaw.sales.map(row => row.id));
-  const registeredItems = includeRegistered ? analyticsRaw.items.filter(row => registeredIds.has(row.sale_id)).map(row => ({ ...row, sale_id: `sale:${row.sale_id}` })) : [];
-  const oldRows = includeLegacy ? analyticsRaw.legacy : [];
+  const registeredItems = analyticsRaw.items.filter(row => registeredIds.has(row.sale_id)).map(row => ({ ...row, sale_id: `sale:${row.sale_id}` }));
+  const oldRows = analyticsRaw.legacy;
   const productId = row => row.product_id == null ? `legacy-name:${row.product_name_raw}` : row.product_id;
   analyticsSales = [...registeredSales, ...oldRows.map(row => ({ id: `legacy:${row.id}`, sold_at: row.sold_on, total_amount: Number(row.amount || 0), status: 'completed', source: 'legacy' }))];
   analyticsSaleItems = [...registeredItems, ...oldRows.map(row => ({ sale_id: `legacy:${row.id}`, product_id: productId(row), quantity: Number(row.quantity || 0), amount: Number(row.amount || 0) }))];
   analyticsProfit = [
-    ...(includeRegistered ? analyticsRaw.profit : []),
+    ...analyticsRaw.profit,
     ...oldRows.map(row => {
       const profit = legacySaleProfit(row);
       return { sold_at: row.sold_on, product_id: productId(row), product_name_raw: row.product_name_raw, quantity: Number(row.quantity || 0), amount: Number(row.amount || 0), cost_amount: profit == null || row.amount == null ? null : Number(row.amount) - profit, source: 'legacy' };
@@ -1875,7 +1889,7 @@ async function refreshAnalyticsData() {
   }
 }
 
-function buildProfitAnalysis(sales, year, latestSaleDate, isLatestYear) {
+function buildProfitAnalysis(sales, year, latestSaleDate, maxMonth) {
   if (!analyticsProfit.length) return '<p class="seasonal-empty">이익 데이터를 불러오지 못했습니다. 원가 데이터를 확인해 주세요.</p>';
   const categoryOf = new Map(products.map((product) => [product.id, product.product_categories?.name || '기타']));
   const nameOf = new Map([...products.map((product) => [product.id, product.name]), ...analyticsProfit.filter(row => row.product_name_raw).map(row => [row.product_id, row.product_name_raw])]);
@@ -1886,8 +1900,20 @@ function buildProfitAnalysis(sales, year, latestSaleDate, isLatestYear) {
   const rows = allRows.filter(row => row.cost != null && Number.isFinite(row.cost));
   if (!rows.length) return '<p class="notice" id="analyticsUnknownCost">원가·수익을 확인할 수 있는 기록이 없어 이익을 계산하지 않았습니다. 매입·원가 자료를 확인해 주세요.</p>';
   const previousYear = String(Number(year) - 1);
-  const cutoff = isLatestYear ? latestSaleDate.slice(5, 10) : '12-31';
-  const inYtd = (row, target) => row.date.startsWith(target) && row.date.slice(5, 10) <= cutoff;
+  const periodOptions = analyticsPeriodOptions(selectedAnalyticsPeriodType, maxMonth);
+  if (!periodOptions.some(([value]) => value === selectedAnalyticsPeriodIndex)) selectedAnalyticsPeriodIndex = periodOptions.at(-1)[0];
+  const periodIndex = selectedAnalyticsPeriodIndex;
+  const startMonth = selectedAnalyticsPeriodType === 'month' ? periodIndex : selectedAnalyticsPeriodType === 'quarter' ? (periodIndex - 1) * 3 + 1 : selectedAnalyticsPeriodType === 'half' ? (periodIndex - 1) * 6 + 1 : 1;
+  const endMonth = selectedAnalyticsPeriodType === 'month' ? periodIndex : selectedAnalyticsPeriodType === 'quarter' ? periodIndex * 3 : selectedAnalyticsPeriodType === 'half' ? periodIndex * 6 : maxMonth;
+  const latestCutoff = latestSaleDate.slice(5, 10);
+  const usesPartialLastMonth = Number(latestCutoff.slice(0, 2)) === endMonth && endMonth === maxMonth;
+  const inPeriod = (row, target) => {
+    if (!row.date.startsWith(target)) return false;
+    const month = Number(row.date.slice(5, 7));
+    if (month < startMonth || month > endMonth) return false;
+    return !usesPartialLastMonth || month !== endMonth || row.date.slice(5, 10) <= latestCutoff;
+  };
+  const periodLabel = selectedAnalyticsPeriodType === 'year' ? `${year}년 ${maxMonth === 12 ? '연간' : `1월 ~ ${maxMonth}월`}` : `${year}년 ${periodOptions.find(([value]) => value === periodIndex)[1]}`;
   const totalOf = (list) => {
     const amount = list.reduce((sum, row) => sum + row.amount, 0);
     const cost = list.reduce((sum, row) => sum + row.cost, 0);
@@ -1895,13 +1921,12 @@ function buildProfitAnalysis(sales, year, latestSaleDate, isLatestYear) {
   };
   const percentChange = (now, before) => (before > 0 ? ((now - before) / before) * 100 : null);
   const money = (value) => `${Math.round(value).toLocaleString('ko-KR')}원`;
-  const nowRows = rows.filter((row) => inYtd(row, year));
-  const beforeRows = rows.filter((row) => inYtd(row, previousYear));
+  const nowRows = rows.filter((row) => inPeriod(row, year));
+  const beforeRows = rows.filter((row) => inPeriod(row, previousYear));
   const now = totalOf(nowRows);
   const before = totalOf(beforeRows);
-  const ordersNow = analyticsSource === 'registered' ? sales.filter(sale => sale.sold_at.startsWith(year) && sale.sold_at.slice(5, 10) <= cutoff).length : rows.filter(row => inYtd(row, year)).length;
-  const ordersBefore = analyticsSource === 'registered' ? sales.filter(sale => sale.sold_at.startsWith(previousYear) && sale.sold_at.slice(5, 10) <= cutoff).length : rows.filter(row => inYtd(row, previousYear)).length;
-  const cutoffText = `${Number(cutoff.slice(0, 2))}월 ${Number(cutoff.slice(3, 5))}일`;
+  const ordersNow = nowRows.length;
+  const ordersBefore = beforeRows.length;
 
   // 상단 지표 카드: good은 증가가 좋은 지표(true)인지, 나쁜 지표(false: 원가)인지
   const card = (title, valueText, deltaText, change, good = true, icon = '📈', color = 'blue') => {
@@ -1916,7 +1941,7 @@ function buildProfitAnalysis(sales, year, latestSaleDate, isLatestYear) {
     card('매출총이익', nowRows.length ? money(now.profit) : '—', percentText(percentChange(now.profit, before.profit)), percentChange(now.profit, before.profit), true, '💰', 'blue'),
     card('마진율', now.margin === null ? '—' : `${now.margin.toFixed(1)}%`, marginDiff === null ? '비교 기록 없음' : `${marginDiff >= 0 ? '▲ +' : '▼ '}${marginDiff.toFixed(1)}%p`, marginDiff, true, '📈', 'green'),
     card('원가 합계', nowRows.length ? money(now.cost) : '—', percentText(percentChange(now.cost, before.cost)), percentChange(now.cost, before.cost), false, '📦', 'amber'),
-    card(analyticsSource === 'registered' ? '주문 1건당 이익' : '품목 기록 1건당 이익', ordersNow ? money(profitPerOrderNow) : '—', percentText(percentChange(profitPerOrderNow, profitPerOrderBefore)), percentChange(profitPerOrderNow, profitPerOrderBefore), true, '🧾', 'purple')
+    card('기록 1건당 이익', ordersNow ? money(profitPerOrderNow) : '—', percentText(percentChange(profitPerOrderNow, profitPerOrderBefore)), percentChange(profitPerOrderNow, profitPerOrderBefore), true, '🧾', 'purple')
   ].join('');
 
   // 분류별 수익성
@@ -1989,7 +2014,7 @@ function buildProfitAnalysis(sales, year, latestSaleDate, isLatestYear) {
 
   // 자동 해석: 숫자에서 바로 읽히는 사실만 문장으로 정리
   const insights = [];
-  if (marginDiff !== null) insights.push(`${year}년 ${cutoffText}까지 마진율은 ${now.margin.toFixed(1)}%로, 전년 같은 기간보다 ${Math.abs(marginDiff).toFixed(1)}%p ${marginDiff >= 0 ? '높습니다' : '낮습니다'}.`);
+  if (marginDiff !== null) insights.push(`${periodLabel} 마진율은 ${now.margin.toFixed(1)}%로, 전년 같은 기간보다 ${Math.abs(marginDiff).toFixed(1)}%p ${marginDiff >= 0 ? '높습니다' : '낮습니다'}.`);
   const revenueChange = percentChange(now.amount, before.amount);
   const costChange = percentChange(now.cost, before.cost);
   if (revenueChange !== null && costChange !== null) insights.push(`매출은 ${revenueChange >= 0 ? '+' : ''}${revenueChange.toFixed(1)}%, 원가는 ${costChange >= 0 ? '+' : ''}${costChange.toFixed(1)}% 변했습니다.${costChange > revenueChange + 2 ? ' 원가가 매출보다 빠르게 늘어 마진이 줄 수 있습니다.' : ''}`);
@@ -1998,9 +2023,8 @@ function buildProfitAnalysis(sales, year, latestSaleDate, isLatestYear) {
   if (weakCategories.length) insights.push(`${weakCategories.map((item) => item.name).join(', ')}은(는) 매출 비중이 큰데 마진율이 평균보다 낮습니다. 판매가나 매입 단가를 점검해 볼 만합니다.`);
 
   return `
-    <p class="kpi-period">기준 기간: ${year}년 1월 1일 ~ ${cutoffText} · ${previousYear}년 같은 기간과 비교 (이익 = 매출 − 매입 원가)</p>
-    ${allRows.filter(row => inYtd(row, year) && row.cost == null).length ? `<p class="notice" id="analyticsUnknownCost">원가·수익을 확인할 수 없는 ${allRows.filter(row => inYtd(row, year) && row.cost == null).length.toLocaleString('ko-KR')}개 품목 기록은 아래 이익·원가·마진율 집계에서 제외했습니다. 매출 합계에는 포함됩니다.</p>` : ''}
-    ${nowRows.some((row) => row.amount > 0 && row.cost <= 0) ? '<p class="notice">원가가 0원으로 기록된 판매가 포함되어 있습니다. 수익과 마진율을 판단하기 전에 매입·원가 기록을 확인해 주세요.</p>' : ''}
+    <p class="kpi-period">기준 기간: ${periodLabel}${usesPartialLastMonth ? ` · ${endMonth}월은 ${Number(latestCutoff.slice(3, 5))}일까지` : ''} · ${previousYear}년 같은 기간과 비교 (이익 = 매출 − 매입 원가)</p>
+    ${allRows.filter(row => inPeriod(row, year) && row.cost == null).length ? `<p class="notice" id="analyticsUnknownCost">원가·수익을 확인할 수 없는 ${allRows.filter(row => inPeriod(row, year) && row.cost == null).length.toLocaleString('ko-KR')}개 품목 기록은 아래 이익·원가·마진율 집계에서 제외했습니다. 매출 합계에는 포함됩니다.</p>` : ''}
     <div class="analysis-kpis">${cards}</div>
     ${insights.length ? `<section class="profit-insights"><h3>한눈에 보기</h3><ul>${insights.map((text) => `<li>${escapeText(text)}</li>`).join('')}</ul></section>` : ''}
     <section class="profit-card">
@@ -2025,13 +2049,14 @@ function renderAnalytics(sales, saleItems) {
   const view = document.querySelector('#analytics .panel');
   const years = [...new Set(sales.map((sale) => sale.sold_at.slice(0, 4)))].sort().reverse();
   if (!years.length) {
-    view.innerHTML = `${analyticsSourceControls()}<p class="empty-message">선택한 자료 범위에 판매 기록이 없습니다.</p>`;
+    view.innerHTML = `${analyticsSourceControls()}<p class="empty-message">등록된 판매 기록이 없습니다.</p>`;
     document.querySelector('#dashboardCharts').replaceChildren();
     document.querySelector('#dashboardInsights').hidden = true;
     bindAnalyticsSource(); return;
   }
   if (!years.includes(selectedAnalyticsYear)) selectedAnalyticsYear = years[0];
   const selectedSales = sales.filter((sale) => sale.sold_at.startsWith(selectedAnalyticsYear));
+  const selectedYearMaxMonth = Math.max(...selectedSales.map((sale) => Number(sale.sold_at.slice(5, 7))), 1);
   const selectedSaleIds = new Set(selectedSales.map((sale) => sale.id));
   const selectedItems = saleItems.filter((item) => selectedSaleIds.has(item.sale_id));
   const latestSaleDate = sales.map((sale) => sale.sold_at.slice(0, 10)).sort().at(-1);
@@ -2132,27 +2157,27 @@ function renderAnalytics(sales, saleItems) {
   const seasonal = buildSeasonalAlerts(sales, saleItems, analyticsWeather);
   const weatherOutlook = buildWeatherOutlook(sales, saleItems, analyticsWeather, analyticsForecast, analyticsForecastError);
   view.innerHTML = `
-    <div class="analysis-heading"><div><p class="eyebrow">BUSINESS INTELLIGENCE</p><h2>수익성 분석</h2><p>이익과 마진율을 중심으로 시간 흐름과 분류·상품별 수익 구조를 살펴봅니다.</p></div><label class="analysis-year-label" for="analyticsYear">조회 연도<select id="analyticsYear">${years.map((year) => `<option value="${year}" ${year === selectedAnalyticsYear ? 'selected' : ''}>${year}년</option>`).join('')}</select></label></div>
-    ${analyticsSourceControls()}
-    <p class="analytics-scope-note" id="analyticsRevenueSummary">${selectedAnalyticsYear}년 매출 합계 ${won(revenue)} · ${analyticsSource === 'registered' ? '등록 판매' : '판매·엑셀 기록'} ${selectedSales.length.toLocaleString('ko-KR')}건 · 판매 수량 ${countText(units)}개</p>
-    ${analyticsSource !== 'registered' && analyticsRaw.legacy.some(row => row.sold_on.startsWith(selectedAnalyticsYear) && row.amount == null) ? '<p class="notice">매출액이 없는 엑셀 기록은 매출·이익 합계에서 제외했습니다.</p>' : ''}
-    ${buildProfitAnalysis(sales, selectedAnalyticsYear, latestSaleDate, selectedAnalyticsYear === years[0])}
+    <div class="analysis-heading"><div><p class="eyebrow">PROFIT ANALYSIS</p><h2>수익 분석</h2><p>현재 판매·원가·재고를 바탕으로 수익을 점검하고, 발주가 필요한 상품을 찾는 화면입니다.</p></div><label class="analysis-year-label" for="analyticsYear">조회 연도<select id="analyticsYear">${years.map((year) => `<option value="${year}" ${year === selectedAnalyticsYear ? 'selected' : ''}>${year}년</option>`).join('')}</select></label></div>
+    ${analyticsSourceControls(selectedYearMaxMonth)}
+    <p class="analytics-scope-note" id="analyticsRevenueSummary">${selectedAnalyticsYear}년 전체 매출 합계 ${won(revenue)} · 판매 기록 ${selectedSales.length.toLocaleString('ko-KR')}건 · 판매 수량 ${countText(units)}개</p>
+    ${analyticsRaw.legacy.some(row => row.sold_on.startsWith(selectedAnalyticsYear) && row.amount == null) ? '<p class="notice">매출액이 없는 기록은 매출·이익 합계에서 제외했습니다.</p>' : ''}
+    ${buildProfitAnalysis(sales, selectedAnalyticsYear, latestSaleDate, selectedYearMaxMonth)}
     <div class="analysis-grid">
       <section class="trend-card"><div class="chart-title"><div><p class="eyebrow">MONTH TREND</p><h3>연도별 월 매출 비교</h3></div><strong>전체 최고 ${Math.round(max).toLocaleString('ko-KR')}원</strong></div><div class="year-legend">${yearSeries.map((series, index) => `<span><i style="background:${lineColors[index % lineColors.length]}"></i>${series.year}년</span>`).join('')}</div><svg viewBox="0 0 600 200" preserveAspectRatio="none" role="img" aria-label="연도별 월 매출 비교"><line x1="0" y1="170" x2="600" y2="170"/><line x1="0" y1="105" x2="600" y2="105"/><line x1="0" y1="40" x2="600" y2="40"/>${monthFocus}${graphLines}</svg><div class="chart-labels">${labels}</div><div class="chart-events" aria-label="기간 중 주요 일정"><strong>기간 일정</strong>${calendarEvents.length ? calendarEvents.map((event) => `<span><b>${event.start}${event.end !== event.start ? ` ~ ${event.end}` : ''}</b>${event.label} · ${event.note}</span>`).join('') : '<span>표시할 명절·공휴일 일정이 없습니다.</span>'}</div></section>
       <section class="category-card"><p class="eyebrow">CATEGORY CHANGE</p><h3>분류별 전년 대비 증감</h3><p class="category-period">${selectedAnalyticsYear}년 vs ${previousYear}년 · ${periodLabel}${activeMonth ? ' <button type="button" class="month-reset" id="monthReset">연초부터 누계로 보기</button>' : ' · 아래 월 버튼을 누르면 그 달만 비교'}</p>${categoryBody}</section>
     </div>
     ${weatherOutlook}
-    <section class="seasonal-panel"><div class="seasonal-heading"><div><p class="eyebrow">SEASONAL DEMAND INTELLIGENCE</p><h3>계절성 수요 알림</h3><p>${seasonal.latestDate ? `${seasonal.latestDate} 판매 기록 기준 · 전년도 동일 시점의 다음 ${seasonal.settings.leadDays}일을 비교합니다.` : '판매 기록을 불러오는 중입니다.'}</p></div><div class="seasonal-settings"><label>증가 기준<input id="seasonalityThreshold" type="number" min="1" max="200" value="${seasonal.settings.threshold}" />%</label><label>사전 알림<input id="seasonalityLeadDays" type="number" min="7" max="60" value="${seasonal.settings.leadDays}" />일 전</label></div></div>
+    <section class="seasonal-panel"><div class="seasonal-heading"><div><p class="eyebrow">SEASONAL DEMAND INTELLIGENCE</p><h3>상품별 계절 수요 알림</h3><p>${seasonal.latestDate ? `${seasonal.latestDate} 판매 기록 기준 · 상품별 전년도 동일 시점의 다음 ${seasonal.settings.leadDays}일을 비교합니다.` : '판매 기록을 불러오는 중입니다.'}</p></div><div class="seasonal-settings"><label>증가 기준<input id="seasonalityThreshold" type="number" min="1" max="200" value="${seasonal.settings.threshold}" />%</label><label>사전 알림<input id="seasonalityLeadDays" type="number" min="7" max="60" value="${seasonal.settings.leadDays}" />일 전</label></div></div>
       <p class="weather-note">날씨 비교: ${seasonal.latestDate || '기준일 없음'}의 기존 기록과 전년도 수요 증가 시점의 기록을 사용합니다. 향후 7일 예보는 현재 연결된 데이터에 없어 표시하지 않습니다.</p>
-      <div class="seasonal-alert-list">${seasonal.alerts.length ? seasonal.alerts.map((alert) => `<article class="seasonal-alert ${alert.priority >= 2 ? 'high' : ''}"><div><p class="alert-category">${alert.category}</p><h4>작년 ${formatDate(alert.lastYearStart)}부터 수요가 ${Math.round(alert.increaseRate)}% 증가했습니다.</h4><p>최근 추세 ${alert.currentChange === null ? '비교 데이터 부족' : `${alert.currentChange >= 0 ? '+' : ''}${Math.round(alert.currentChange)}%`} · ${alert.weatherText}</p></div><dl><div><dt>작년 성수기 1주</dt><dd>${Math.round(alert.seasonUnits).toLocaleString('ko-KR')}</dd></div><div><dt>올해 최근 4주</dt><dd>${Math.round(alert.currentFourWeek).toLocaleString('ko-KR')}</dd></div><div><dt>현재 재고</dt><dd>${Math.round(alert.stock).toLocaleString('ko-KR')}</dd></div><div><dt>예상 소진</dt><dd>${alert.stockDays === null ? '산정 불가' : `${alert.stockDays}일`}</dd></div></dl><p class="alert-action">${alert.priority >= 2 ? '권장: 발주 필요 여부를 지금 확인하세요.' : '권장: 성수기 전 재고와 발주 일정을 점검하세요.'}</p></article>`).join('') : `<p class="seasonal-empty">이번 주에는 사전 알림 조건을 만족한 분류가 없습니다. 아래 전년 동일 주 비교로 변화를 확인하세요.</p>`}</div>
-      <section class="seasonal-watch"><h4>전년 동일 주 비교</h4><div>${seasonal.watchlist.map((item) => `<article><p>${item.category}</p><strong>${item.changeRate === null ? '비교 불가' : `${item.changeRate >= 0 ? '+' : ''}${Math.round(item.changeRate)}%`}</strong><span>올해 ${Math.round(item.currentWeek)} · 전년 ${Math.round(item.previousYearWeek)} · 재고 ${Math.round(item.stock)}</span></article>`).join('') || '<p class="seasonal-empty">전년 동일 주 비교 데이터가 없습니다.</p>'}</div></section>
+      <div class="seasonal-alert-list">${seasonal.alerts.length ? seasonal.alerts.map((alert) => `<article class="seasonal-alert ${alert.priority >= 2 ? 'high' : ''}"><div><p class="alert-category">${escapeText(alert.productName)}</p><h4>작년 ${formatDate(alert.lastYearStart)}부터 수요가 ${Math.round(alert.increaseRate)}% 증가했습니다.</h4><p>최근 추세 ${alert.currentChange === null ? '비교 데이터 부족' : `${alert.currentChange >= 0 ? '+' : ''}${Math.round(alert.currentChange)}%`} · ${alert.weatherText}</p></div><dl><div><dt>작년 성수기 1주</dt><dd>${Math.round(alert.seasonUnits).toLocaleString('ko-KR')}</dd></div><div><dt>올해 최근 4주</dt><dd>${Math.round(alert.currentFourWeek).toLocaleString('ko-KR')}</dd></div><div><dt>현재 재고</dt><dd>${Math.round(alert.stock).toLocaleString('ko-KR')}</dd></div><div><dt>예상 소진</dt><dd>${alert.stockDays === null ? '산정 불가' : `${alert.stockDays}일`}</dd></div></dl><p class="alert-action">${alert.priority >= 2 ? '권장: 발주 필요 여부를 지금 확인하세요.' : '권장: 성수기 전 재고와 발주 일정을 점검하세요.'}</p></article>`).join('') : `<p class="seasonal-empty">이번 주에는 사전 알림 조건을 만족한 상품이 없습니다. 아래 전년 동일 주 비교로 변화를 확인하세요.</p>`}</div>
+      <section class="seasonal-watch"><h4>상품별 전년 동일 주 비교</h4><div>${seasonal.watchlist.map((item) => `<article><p>${escapeText(item.productName)}</p><strong>${item.changeRate === null ? '비교 불가' : `${item.changeRate >= 0 ? '+' : ''}${Math.round(item.changeRate)}%`}</strong><span>올해 ${Math.round(item.currentWeek)} · 전년 ${Math.round(item.previousYearWeek)} · 재고 ${Math.round(item.stock)}</span></article>`).join('') || '<p class="seasonal-empty">전년 동일 주 비교 데이터가 없습니다.</p>'}</div></section>
     </section>`;
   const dashboardCharts = document.querySelector('#dashboardCharts');
   const dashboardInsights = document.querySelector('#dashboardInsights');
   const analysisGrid = view.querySelector('.analysis-grid');
   if (dashboardCharts && dashboardInsights && analysisGrid) {
     const scope = document.createElement('p'); scope.className = 'analytics-scope-note'; scope.id = 'dashboardAnalyticsScope';
-    scope.textContent = `자료 범위: ${ANALYTICS_SOURCES[analyticsSource]} · 분류 비교 연도: ${selectedAnalyticsYear}년 · 자료 범위와 연도는 분석 화면에서 바꿀 수 있습니다.`;
+    scope.textContent = `분류 비교 연도: ${selectedAnalyticsYear}년 · 분석 기간은 수익 분석 화면에서 바꿀 수 있습니다.`;
     const refreshMessage = document.createElement('p'); refreshMessage.className = 'analytics-refresh-message'; refreshMessage.id = 'dashboardAnalyticsRefreshMessage'; refreshMessage.setAttribute('role', 'status'); refreshMessage.textContent = analyticsRefreshError;
     dashboardCharts.replaceChildren(scope, refreshMessage, analysisGrid);
     dashboardInsights.hidden = false;
