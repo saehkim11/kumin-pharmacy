@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-11-14",
+  "updatedAt": "2026-11-15",
   "items": [
     {
       "section": "policy",
@@ -24,14 +24,13 @@
     },
     {
       "section": "policy",
-      "date": "2026-02-27",
-      "expiresOn": "2026-12-10",
-      "category": "welfare",
-      "categoryLabel": "복지 지원",
-      "source": "서울특별시",
-      "title": "2026 우리동네 동물병원: 취약계층 반려동물 의료비 지원",
-      "summaryKo": "서울 거주 대상자의 지정 병원·신청 조건·마감일을 원문에서 확인하세요.",
-      "url": "https://news.seoul.go.kr/env/archives/567583"
+      "date": "2026-10-28",
+      "category": "education",
+      "categoryLabel": "교육 일정",
+      "source": "대한수의사회",
+      "title": "동물 진단용 방사선 안전관리 책임자 교육 안내 (12월 3일)",
+      "summaryKo": "동물병원 진단장비 안전관리 책임자를 위한 교육입니다. 대상과 신청 방법을 공식 안내에서 확인하세요.",
+      "url": "https://kvma.or.kr/kvma_info?num=1605&tbl=0"
     },
     {
       "section": "info",
