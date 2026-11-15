@@ -1569,7 +1569,8 @@ function setDashboardValue(index, value, detail) {
 // 대시보드 알림은 외부 기사를 브라우저에서 직접 긁지 않고, 배포 때 확인한 공식 발표 목록만 읽는다.
 // 파일 내려받기와 허가되지 않은 외부 도메인은 뉴스 링크가 될 수 없다.
 const SAFE_NEWS_ORIGINS = new Set([
-  'https://www.mafra.go.kr', 'https://news.seoul.go.kr', 'https://www.koreadognews.co.kr', 'https://www.dailyvet.co.kr'
+  'https://www.mafra.go.kr', 'https://news.seoul.go.kr', 'https://www.koreadognews.co.kr', 'https://www.dailyvet.co.kr',
+  'https://kvma.or.kr'
 ]);
 const NEWS_SECTION_ORDER = ['policy', 'info'];
 const NEWS_SECTION_LABEL = { policy: '정책·복지 공지', info: '국내 반려동물·수의학 새 글' };
