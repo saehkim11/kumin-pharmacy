@@ -4,7 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>pharmacy management</title>
-    <link rel="stylesheet" href="styles.css?v=20261113c" />
+    <link rel="stylesheet" href="styles.css?v=20261114f" />
+    <link rel="stylesheet" href="structure-map.css?v=20261114f" />
   </head>
   <body>
     <div class="app-shell">
@@ -33,7 +34,7 @@
         <header class="topbar">
           <div>
             <p class="eyebrow">WORKSPACE</p>
-            <h1 id="pageTitle">대시보드</h1>
+            <h1 id="pageTitle" tabindex="-1">대시보드</h1>
           </div>
           <div class="header-actions">
             <button class="theme-toggle" id="themeToggle" type="button" aria-label="다크 모드로 전환" title="다크 모드로 전환"><span id="themeIcon" aria-hidden="true">🌙</span></button>
@@ -52,18 +53,24 @@
             <div id="todayScheduleList"></div>
             <p class="empty-message" id="todayScheduleEmpty" hidden>등록된 예약·업무가 없습니다.</p>
           </section>
-          <div class="summary-grid" aria-label="요약 정보">
-            <article class="summary-card"><i class="summary-icon c-blue" aria-hidden="true">💰</i><div class="summary-body"><p>오늘 매출</p><strong>—</strong><span>데이터 연결 후 표시</span></div></article>
-            <article class="summary-card"><i class="summary-icon c-green" aria-hidden="true">🧾</i><div class="summary-body"><p>판매 건수</p><strong>—</strong><span>데이터 연결 후 표시</span></div></article>
-            <article class="summary-card"><i class="summary-icon c-amber" aria-hidden="true">💵</i><div class="summary-body"><p>이번 달 판매 수익</p><strong>—</strong><span>데이터 연결 후 표시</span></div></article>
-            <article class="summary-card"><i class="summary-icon c-purple" aria-hidden="true">📈</i><div class="summary-body"><p>이번 달 마진율</p><strong>—</strong><span>데이터 연결 후 표시</span></div></article>
-          </div>
+          <section class="panel dashboard-news" id="dashboardNews" aria-labelledby="dashboardNewsTitle" hidden>
+            <div class="dashboard-news-heading"><div><p class="eyebrow">PET POLICY &amp; INDUSTRY</p><h2 id="dashboardNewsTitle">반려동물·동물의료 알림</h2><p>보호자에게 안내할 수 있는 정부·지자체 정책과 동물의료·동물약품 발표입니다.</p></div><span class="dashboard-news-source">공식 발표</span></div>
+            <div class="dashboard-news-list" id="dashboardNewsList" aria-live="polite"><p class="empty-message">알림을 불러오는 중입니다.</p></div>
+            <p class="dashboard-news-note" id="dashboardNewsNote">로그인 후 확인할 수 있습니다.</p>
+          </section>
 
           <section class="panel dashboard-trend" id="dashboardTrendPanel" hidden>
             <div class="panel-heading"><div><p class="eyebrow">REVENUE TREND</p><h2>최근 30일 매출 추이</h2></div></div>
             <div id="dashboardTrendChart"></div>
             <p class="empty-message" id="dashboardTrendEmpty" hidden>표시할 매출 데이터가 없습니다.</p>
           </section>
+
+          <div class="summary-grid dashboard-summary-grid" aria-label="매출 요약 정보">
+            <article class="summary-card"><i class="summary-icon c-blue" aria-hidden="true">💰</i><div class="summary-body"><p>오늘 매출</p><strong>—</strong><span>데이터 연결 후 표시</span></div></article>
+            <article class="summary-card"><i class="summary-icon c-green" aria-hidden="true">🧾</i><div class="summary-body"><p>판매 건수</p><strong>—</strong><span>데이터 연결 후 표시</span></div></article>
+            <article class="summary-card"><i class="summary-icon c-amber" aria-hidden="true">💵</i><div class="summary-body"><p>이번 달 판매 수익</p><strong>—</strong><span>데이터 연결 후 표시</span></div></article>
+            <article class="summary-card"><i class="summary-icon c-purple" aria-hidden="true">📈</i><div class="summary-body"><p>이번 달 마진율</p><strong>—</strong><span>데이터 연결 후 표시</span></div></article>
+          </div>
 
           <section class="dashboard-insights panel" id="dashboardInsights" hidden>
             <div class="panel-heading"><div><p class="eyebrow">BUSINESS OVERVIEW</p><h2>매출 · 상품 분석</h2></div></div>
@@ -107,7 +114,7 @@
             </div>
             <div class="table-wrap" hidden id="saleTableWrap"><table><thead><tr><th>상품명</th><th>수량</th><th>금액</th><th>반려동물</th><th></th></tr></thead><tbody id="saleRows"></tbody></table></div>
             <div class="sale-footer" hidden id="saleFooter"><strong id="saleTotal">합계 0원</strong><div><select id="paymentMethod"><option value="card">카드</option><option value="cash">현금</option></select><button class="login-button" id="submitSale" type="button">판매 등록</button></div></div>
-            <p class="empty-message" id="saleMessage">로그인하면 판매를 등록할 수 있습니다.</p>
+            <p class="empty-message" id="saleMessage" role="status">로그인하면 판매를 등록할 수 있습니다.</p>
             <section class="sales-history" id="salePetHistorySection" hidden>
               <div class="stock-lookup-heading"><div><p class="eyebrow">PET PURCHASE HISTORY</p><h3 id="salePetHistoryTitle">구매 이력</h3></div></div>
               <div class="table-wrap"><table><thead><tr><th>일자</th><th>상품명</th><th>수량</th><th>금액</th></tr></thead><tbody id="salePetHistoryRows"></tbody></table></div>
@@ -236,7 +243,7 @@
             </section>
             <div class="table-wrap" hidden id="purchaseTableWrap"><table><thead><tr><th>상품명</th><th>수량</th><th>매입 단가</th><th>금액</th><th></th></tr></thead><tbody id="purchaseRows"></tbody></table></div>
             <div class="sale-footer" hidden id="purchaseFooter"><strong id="purchaseTotal">합계 0원</strong><button class="login-button" id="submitPurchase" type="button">입고 등록</button></div>
-            <p class="empty-message" id="purchaseMessage">대표 계정으로 로그인하면 입고를 등록할 수 있습니다.</p>
+            <p class="empty-message" id="purchaseMessage" role="status">대표 계정으로 로그인하면 입고를 등록할 수 있습니다.</p>
           </section>
         </section>
 
@@ -256,7 +263,7 @@
               <div><label for="legacySalesSearch">상품명 검색 <span>(선택)</span></label><input id="legacySalesSearch" type="search" placeholder="상품명·초성으로 필터" autocomplete="off" /></div>
             </div>
             <div class="legacy-sales-view-tabs" id="legacySalesViewTabs">
-              <button type="button" class="active" data-view="daily">일별 추이</button>
+              <button type="button" class="active" data-view="daily" aria-pressed="true">일별 추이</button>
               <button type="button" data-view="product">상품별</button>
               <button type="button" data-view="weekday">요일별</button>
               <button type="button" data-view="margin">마진율</button>
@@ -264,6 +271,7 @@
               <button type="button" data-view="yoy">전년 동기</button>
               <button type="button" data-view="weather">날씨·인구 예측</button>
             </div>
+            <p class="empty-message" id="legacySalesFilterHint"></p>
             <p class="ledger-summary" id="legacySalesMonthSummary" hidden></p>
             <div class="bi-chart legacy-sales-chart">
               <h3 id="legacySalesChartTitle">일별 매출 추이 <span class="chart-legend-inline" id="legacySalesChartLegend"><i class="legend-dot weekday"></i>평일 <i class="legend-dot weekend"></i>주말 <i class="legend-dot holiday"></i>공휴일·명절</span></h3>
@@ -272,8 +280,9 @@
                 <div class="bar-chart" id="legacySalesChart"></div>
               </div>
             </div>
-            <div class="table-wrap"><table class="history-table legacy-sales-table"><thead id="legacySalesHead"><tr><th>일자</th><th>요일</th><th class="col-wide">상품명</th><th>수량</th><th>단가</th><th>금액</th><th>마진율</th></tr></thead><tbody id="legacySalesRows"></tbody></table></div>
+            <div class="table-wrap"><table class="history-table legacy-sales-table"><thead id="legacySalesHead"><tr><th>일자</th><th>요일</th><th class="col-wide">상품명</th><th>수량</th><th>판매단가</th><th>매입단가</th><th>매출액</th><th>마진율</th><th>수익</th></tr></thead><tbody id="legacySalesRows"></tbody></table></div>
             <p class="empty-message" id="legacySalesEmpty" hidden>해당 월의 매출 데이터가 없습니다.</p>
+            <p class="empty-message" id="legacySalesProfitNote" hidden></p>
           </section>
         </section>
 
@@ -303,17 +312,9 @@
 
         <section class="view" id="structure">
           <section class="panel">
-            <p class="eyebrow">SITE MAP · ADMIN ONLY</p><h2>사이트 구조</h2>
-            <p class="empty-message">위에서 아래로 갈수록 세부 화면입니다. 각 항목을 누르면 설명이 팝업으로 나옵니다. 주황 번호가 붙은 항목은 아래 개선 포인트와 연결됩니다.</p>
-            <div class="structure-legend" aria-label="범례"><span class="tag all">전체 공통</span><span class="tag admin">admin 전용</span><span class="tag data">연결 데이터</span><span class="flag-demo">1</span>개선 포인트 연결</div>
-            <div class="structure-stats" id="structureStats"></div>
-            <div class="org-chart" id="siteTree"></div>
-            <h3 class="structure-sub">데이터 연결 그래프</h3>
-            <p class="empty-message">한 화면에서 입력한 내용이 어디로 이어지는지 화살표로 보여줍니다. 화면(점)이나 화살표를 누르면 설명이 나옵니다.</p>
+            <p class="eyebrow">업무 연결 안내 · 관리자 전용</p><h2>사이트 구조</h2>
+            <p class="empty-message">궁금한 업무를 고르면 입력부터 조회까지 연결되는 순서와 조건을 확인할 수 있습니다.</p>
             <div class="flow-graph" id="siteFlowGraph"></div>
-            <h3 class="structure-sub">개선 포인트</h3>
-            <p class="empty-message">현재 코드에서 확인한 사실을 기준으로 정리했습니다. 수정 여부는 별도로 결정하시면 됩니다.</p>
-            <div class="insight-list" id="structureInsights"></div>
           </section>
           <section class="panel" id="dataBackupPanel">
             <p class="eyebrow">DATA BACKUP · ADMIN ONLY</p><h2>데이터 백업</h2>
@@ -337,14 +338,10 @@
             <div class="panel calendar-panel"><div class="calendar-weekdays"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div><div id="taskCalendar" class="task-calendar"></div></div>
             <aside class="panel task-detail"><p class="eyebrow">TASK DETAIL</p><h2 id="taskDetailTitle">업무를 선택하세요</h2><p id="taskDetailMeta" class="empty-message">달력에서 업무가 있는 날짜를 선택하면 상세 내용과 댓글을 볼 수 있습니다.</p><div id="taskStatusControls" hidden><label for="taskStatus">업무 상태</label><select id="taskStatus"><option value="todo">할 일</option><option value="doing">진행 중</option><option value="done">완료</option><option value="hold">보류</option></select><button id="saveTaskStatus" type="button" class="login-button">상태 저장</button></div><div id="commentList" class="comment-list"></div><form id="commentForm" hidden><label for="commentBody">댓글</label><textarea id="commentBody" maxlength="1000" placeholder="업무 진행 상황이나 전달 사항을 남기세요"></textarea><button class="login-button" type="submit">댓글 등록</button></form></aside>
           </section>
-          <section class="panel owner-task-form" id="ownerTaskForm" hidden><p class="eyebrow">OWNER ONLY</p><h2>새 업무 등록</h2><p class="empty-message">예약(방문) 건은 시간을 넣어주세요 — 당일 예약이 대시보드에 시간순으로 표시됩니다.</p><form id="newTaskForm" class="new-task-grid"><input id="newTaskTitle" required maxlength="120" placeholder="업무·예약 제목 (예: 홍길동(보리) 접종)"/><input id="newTaskDueDate" type="date"/><input id="newTaskTime" type="time" title="예약 시간(선택)"/><select id="newTaskAssignee" required><option value="">담당자 선택</option></select><select id="newTaskPriority"><option value="normal">보통</option><option value="high">높음</option><option value="low">낮음</option></select><button class="login-button" type="submit">업무 등록</button></form></section>
+          <section class="panel owner-task-form" id="ownerTaskForm" hidden><p class="eyebrow">OWNER ONLY</p><h2>새 업무 등록</h2><p class="empty-message">예약(방문) 건은 시간을 넣어주세요 — 당일 예약이 대시보드에 시간순으로 표시됩니다.</p><form id="newTaskForm" class="new-task-grid"><div><label for="newTaskTitle">업무·예약 제목</label><input id="newTaskTitle" required maxlength="120" placeholder="업무·예약 제목 (예: 홍길동(보리) 접종)"/></div><div><label for="newTaskDueDate">업무일</label><input id="newTaskDueDate" type="date"/></div><div><label for="newTaskTime">예약 시간 (선택)</label><input id="newTaskTime" type="time" title="예약 시간(선택)"/></div><div><label for="newTaskAssignee">담당자</label><select id="newTaskAssignee" required><option value="">담당자 선택</option></select></div><div><label for="newTaskPriority">중요도</label><select id="newTaskPriority"><option value="normal">보통</option><option value="high">높음</option><option value="low">낮음</option></select></div><button class="login-button" type="submit">업무 등록</button></form></section>
         </section>
       </main>
     </div>
-    <dialog id="structureDialog" class="structure-dialog">
-      <div class="dialog-heading"><div><p class="eyebrow" id="structureDialogEyebrow"></p><h2 id="structureDialogTitle"></h2></div><button class="close-button" type="button" id="structureDialogClose" aria-label="설명 닫기">×</button></div>
-      <div id="structureDialogBody"></div>
-    </dialog>
     <dialog id="loginDialog">
       <form id="loginForm" method="dialog">
         <div class="dialog-heading"><div><p class="eyebrow">SIGN IN</p><h2>로그인</h2></div><button class="close-button" type="button" id="closeLogin" aria-label="로그인 창 닫기">×</button></div>
@@ -356,21 +353,29 @@
     <dialog id="newPetDialog" class="pet-new-dialog">
       <div class="dialog-heading"><div><p class="eyebrow">NEW CUSTOMER</p><h2>새 보호자·반려동물 등록</h2></div><button class="close-button" type="button" id="closeNewPetDialog" aria-label="등록 창 닫기">×</button></div>
       <form class="pet-new-form" id="newPetForm">
+        <p class="pet-registration-hint">이름 두 개를 입력하고 종류를 확인하면 등록할 수 있습니다.</p>
+        <div class="pet-basic-fields">
         <div><label for="newOwnerName">보호자 이름</label><input id="newOwnerName" type="text" maxlength="40" required /></div>
-        <div><label for="newOwnerPhone">연락처 <span>(선택)</span></label><input id="newOwnerPhone" type="tel" maxlength="20" placeholder="010-1234-5678" /></div>
         <div><label for="newPetName">반려동물 이름</label><input id="newPetName" type="text" maxlength="40" required /></div>
         <div><label for="newPetSpecies">종류</label><select id="newPetSpecies"><option value="dog">강아지</option><option value="cat">고양이</option><option value="unknown">기타</option></select></div>
+        </div>
+        <details class="pet-optional-details">
+          <summary>추가 정보 입력 <span>(선택)</span></summary>
+          <div class="pet-extra-fields">
+        <div><label for="newOwnerPhone">연락처 <span>(선택)</span></label><input id="newOwnerPhone" type="tel" maxlength="20" placeholder="010-1234-5678" /></div>
         <div><label for="newPetBreed">품종 <span>(선택)</span></label><input id="newPetBreed" type="text" maxlength="40" /></div>
         <div><label for="newPetSex">성별</label><select id="newPetSex"><option value="unknown">미상</option><option value="male">수컷</option><option value="female">암컷</option></select></div>
         <div><label for="newPetNeutered">중성화</label><select id="newPetNeutered"><option value="">미상</option><option value="true">완료</option><option value="false">안함</option></select></div>
         <div><label for="newPetBirth">생년월일 <span>(선택)</span></label><input id="newPetBirth" type="date" /></div>
         <div><label for="newPetWeight">체중(kg) <span>(선택)</span></label><input id="newPetWeight" type="number" min="0" step="0.1" /></div>
         <div><label for="newPetCoat">털색 <span>(선택)</span></label><input id="newPetCoat" type="text" maxlength="40" /></div>
-        <button class="login-button" type="submit">등록</button>
+          </div>
+        </details>
+        <div class="pet-new-actions"><button class="login-button" type="submit">보호자·반려동물 등록</button></div>
       </form>
       <p class="form-message" id="newPetFormMessage"></p>
     </dialog>
     <script src="config.js"></script>
-    <script src="app.js?v=20261113e"></script>
+    <script src="app.js?v=20261114m"></script>
   </body>
 </html>

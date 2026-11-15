@@ -1,0 +1,49 @@
+/* Screen-native flow diagram: legible at every viewport without shrinking text. */
+#siteFlowGraph{--flow-muted:#53627a;border:0;padding:0;background:transparent;margin-top:24px}
+html[data-theme="dark"] #siteFlowGraph{--flow-muted:#b7c7df}
+.flow-route-picker{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:24px}
+.flow-route-picker button{min-height:48px;padding:12px 22px;border:1px solid var(--line);border-radius:9px;background:var(--white);color:var(--ink);font:inherit;font-weight:700;cursor:pointer;white-space:nowrap}
+.flow-route-picker button:hover{border-color:var(--blue);background:var(--blue-soft)}
+.flow-route-picker button[aria-pressed="true"]{background:#245fce;border-color:#245fce;color:#fff}
+.flow-introduction{padding:20px;border:1px solid var(--line);border-radius:12px;background:var(--paper)}
+.flow-introduction h3{margin:0;font-size:20px;line-height:1.5}
+.flow-introduction p{margin:8px 0 0;font-size:15px;color:var(--flow-muted);line-height:1.7}
+.flow-diagram{display:grid;grid-template-columns:minmax(0,1fr) 62px minmax(0,1fr) 62px minmax(0,1.2fr);align-items:start;margin:24px 0;gap:10px}
+.flow-stage{min-width:0}
+.flow-stage-heading{min-height:48px;margin:0 0 12px;font-size:15px;line-height:1.6;color:var(--ink)}
+.flow-card{display:grid;gap:8px;width:100%;min-height:128px;padding:18px;margin:0 0 12px;border:1px solid var(--line);border-radius:10px;background:var(--white);color:var(--ink);text-align:left;font:inherit;cursor:pointer;overflow-wrap:anywhere}
+.flow-card strong{font-size:16px;line-height:1.5}
+.flow-card>span{font-size:14px;line-height:1.6;color:var(--flow-muted)}
+.flow-card small{justify-self:start;padding:3px 7px;border-radius:5px;background:var(--paper);color:var(--flow-muted);font-size:13px}
+.flow-card:hover{border-color:var(--blue);background:var(--paper)}
+.flow-card[aria-pressed="true"]{border:2px solid var(--blue);padding:17px;background:var(--blue-soft);color:var(--ink)}
+.flow-card[aria-pressed="true"]::after{content:'✓ 선택됨 · 아래 설명 확인';font-size:13px;font-weight:700;color:var(--ink)}
+.flow-connector{display:grid;justify-items:center;gap:8px;margin-top:90px;text-align:center;font-size:13px;font-weight:700;line-height:1.5;color:var(--flow-muted);word-break:keep-all}
+.flow-direction{font-size:34px;line-height:1;color:var(--blue)}
+.flow-caution{margin:0;padding:14px 18px;border-left:4px solid var(--blue);border-radius:4px;background:var(--blue-soft);color:var(--ink);font-size:15px;line-height:1.7}
+.flow-help{margin:22px 0 10px;font-size:14px;color:var(--flow-muted)}
+.flow-node-detail{min-height:240px;padding:22px;border:1px solid var(--line);border-radius:12px;background:var(--paper);color:var(--ink);scroll-margin-top:20px}
+.flow-node-detail h4{margin:0 0 10px;font-size:19px}
+.flow-node-detail p,.flow-node-detail li{font-size:15px;line-height:1.8}
+.flow-node-detail p{margin:0}
+.flow-node-detail ul{margin:12px 0 18px;padding-left:22px}
+.flow-node-detail button{white-space:normal}
+html[data-theme="dark"] .flow-route-picker button[aria-pressed="true"]{background:#9abaff;border-color:#9abaff;color:#101c30}
+@media(max-width:1100px){
+  .flow-diagram{grid-template-columns:minmax(0,1fr);gap:0}
+  .flow-stage-heading{min-height:0}
+  .flow-stage{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+  .flow-stage-heading{grid-column:1/-1;margin-bottom:0}
+  .flow-card{margin:0;min-height:116px}
+  .flow-connector{display:flex;align-items:center;justify-content:center;margin:16px 0;gap:12px}
+  .flow-direction{transform:rotate(90deg)}
+}
+@media(max-width:560px){
+  .flow-route-picker{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .flow-route-picker button{padding:12px 8px;white-space:normal;overflow-wrap:anywhere}
+  .flow-stage{grid-template-columns:minmax(0,1fr)}
+  .flow-introduction,.flow-node-detail{padding:16px}
+  .flow-introduction h3{font-size:18px}
+  .flow-card{min-height:110px;padding:16px}
+  .flow-card[aria-pressed="true"]{padding:15px}
+}

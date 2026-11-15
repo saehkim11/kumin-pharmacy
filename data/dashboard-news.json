@@ -1,0 +1,57 @@
+{
+  "updatedAt": "2026-11-14",
+  "items": [
+    {
+      "section": "policy",
+      "date": "2026-10-26",
+      "category": "policy",
+      "categoryLabel": "국가 정책",
+      "source": "농림축산식품부",
+      "title": "동물학대 재발 방지와 동물보호망 확충: 동물보호법 개정안 공포",
+      "summaryKo": "2027년 시행 예정 내용과 보호자 준수사항을 공식 원문에서 확인하세요.",
+      "url": "https://www.mafra.go.kr/bbs/home/792/582055/artclView.do"
+    },
+    {
+      "section": "policy",
+      "date": "2026-09-13",
+      "expiresOn": "2026-11-30",
+      "category": "policy",
+      "categoryLabel": "등록 안내",
+      "source": "농림축산식품부",
+      "title": "동물등록·변경신고와 11월 집중점검 안내",
+      "summaryKo": "동물등록 여부, 변경신고, 목줄·인식표 등 보호자 준수사항을 확인하세요.",
+      "url": "https://www.mafra.go.kr/bbs/home/792/579241/artclView.do"
+    },
+    {
+      "section": "policy",
+      "date": "2026-02-27",
+      "expiresOn": "2026-12-10",
+      "category": "welfare",
+      "categoryLabel": "복지 지원",
+      "source": "서울특별시",
+      "title": "2026 우리동네 동물병원: 취약계층 반려동물 의료비 지원",
+      "summaryKo": "서울 거주 대상자의 지정 병원·신청 조건·마감일을 원문에서 확인하세요.",
+      "url": "https://news.seoul.go.kr/env/archives/567583"
+    },
+    {
+      "section": "info",
+      "date": "2026-11-13",
+      "category": "expert",
+      "categoryLabel": "국내 새 글",
+      "source": "한국애견신문",
+      "title": "한국애견신문 최신 소식: 반려동물 생활·행사·산업 정보",
+      "summaryKo": "국내 반려동물 관련 최신 소식을 한국어로 확인합니다.",
+      "url": "https://www.koreadognews.co.kr/"
+    },
+    {
+      "section": "info",
+      "date": "2026-11-14",
+      "category": "expert",
+      "categoryLabel": "국내 새 글",
+      "source": "데일리벳",
+      "title": "데일리벳 최신 기사: 동물병원·수의학 현장 소식",
+      "summaryKo": "국내 동물병원·수의학 관련 최신 기사를 한국어로 확인합니다.",
+      "url": "https://www.dailyvet.co.kr/"
+    }
+  ]
+}

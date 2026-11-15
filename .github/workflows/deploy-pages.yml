@@ -32,7 +32,8 @@ jobs:
           test -n "$SUPABASE_URL"
           test -n "$SUPABASE_PUBLISHABLE_KEY"
           mkdir -p _site
-          cp index.html app.js styles.css _site/
+          cp index.html app.js styles.css structure-map.css _site/
+          cp -R data _site/
           cat > _site/config.js <<EOF
           window.APP_CONFIG = {
             supabaseUrl: "$SUPABASE_URL",

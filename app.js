@@ -28,6 +28,10 @@ let activeSuggestionIndex = -1;
 let analyticsSales = [];
 let analyticsProfit = []; // 판매항목별 매출·원가 (이익 분석용, admin 전용)
 let analyticsSaleItems = [];
+let analyticsSource = 'all';
+let analyticsRaw = { sales: [], items: [], profit: [], legacy: [] };
+let analyticsRefreshError = '';
+let analyticsRequestVersion = 0;
 let selectedAnalyticsYear = '';
 let selectedAnalyticsMonth = null; // null이면 최근 판매월, 0이면 연초부터 누계, 1~12는 해당 월
 let analyticsWeather = [];
@@ -39,6 +43,7 @@ let legacySales = [];
 let selectedLegacySalesMonth = '';
 let salesHistoryRows = []; // 선택한 월의 판매항목(일자·상품·수량·금액)
 let salesHistoryView = 'daily';
+let dashboardNewsLoaded = false;
 
 const saleProductSearch = document.querySelector('#saleProductSearch');
 const saleProductValue = document.querySelector('#saleProduct');
@@ -76,7 +81,9 @@ async function loadSalePetOptions() {
 }
 
 // 반려동물을 선택하면 하단을 전체 월별 내역 대신 그 반려동물의 구매 이력으로 전환
+let salePetHistoryVersion = 0;
 async function updateSalePetHistory() {
+  const requestVersion = ++salePetHistoryVersion;
   const label = salePetSearch.value.trim();
   const petId = label ? salePetDirectory.get(label) : null;
   if (!petId) {
@@ -87,8 +94,11 @@ async function updateSalePetHistory() {
   salesHistorySection.hidden = true;
   salePetHistorySection.hidden = false;
   salePetHistoryTitle.textContent = `구매 이력 — ${label}`;
+  salePetHistoryRows.replaceChildren();
+  salePetHistoryEmpty.hidden = true;
   try {
     const rows = await apiAll(`sale_items?select=quantity,amount,products(name),sales(sold_at)&pet_id=eq.${petId}`);
+    if (requestVersion !== salePetHistoryVersion) return;
     rows.sort((a, b) => (b.sales?.sold_at || '').localeCompare(a.sales?.sold_at || ''));
     if (!rows.length) {
       salePetHistoryRows.replaceChildren();
@@ -104,6 +114,7 @@ async function updateSalePetHistory() {
       }));
     }
   } catch {
+    if (requestVersion !== salePetHistoryVersion) return;
     salePetHistoryRows.replaceChildren();
     salePetHistoryEmpty.hidden = false;
   }
@@ -156,6 +167,7 @@ const newPetForm = document.querySelector('#newPetForm');
 const newPetFormMessage = document.querySelector('#newPetFormMessage');
 const salePetNewButton = document.querySelector('#salePetNewButton');
 let selectedPetId = null;
+let petDetailRequestVersion = 0;
 
 // 많이 쓰인 진료기록/상세 문구를 빈도순으로 datalist에 채워 자동완성으로 재사용할 수 있게 함
 async function loadPetVisitSuggestions() {
@@ -302,199 +314,120 @@ menuButtons.forEach((button) => {
   });
 });
 
-// ---------- 사이트 구조 (관리자 전용 지도) ----------
-// 화면을 추가하거나 바꾸면 아래 목록도 같이 고쳐 주세요. insight 번호는 아래 siteInsights와 연결됩니다.
-const siteTreeData = {
-  label: '약국 ERP', full: 'pharmacy management', access: 'all', note: '로그인 후 역할(admin, staff)에 따라 메뉴가 달라지는 약국 업무 사이트입니다.', children: [
-    { label: '대시보드', full: '대시보드', access: 'all', note: '오늘 일정·매출 등 핵심 정보를 한눈에 보는 첫 화면입니다.', children: [
-      { label: '오늘 일정', full: '오늘 일정(예약·업무)', access: 'all', note: '공유 업무 중 오늘 날짜인 것을 시간순으로 보여줍니다. 시간을 적어두면 예약처럼, 안 적으면 할 일로 보입니다.', data: ['action_tasks'] },
-      { label: '요약 카드', full: '요약 카드 4개', access: 'all', note: '오늘 매출 · 판매 건수 · 이번 달 판매 수익 · 이번 달 마진율(수익·마진율은 admin 전용 지표)', data: ['sales', 'products', 'sale_items', 'v_sale_items_profit'], insight: 2 },
-      { label: '매출 분석', full: '매출·상품 분석', access: 'admin', note: '연도별 월 매출 그래프와 분류별 전년 대비 증감. 월 버튼을 누르면 두 영역이 함께 바뀝니다.', data: ['sales', 'sale_items'], insight: 3 }
-    ] },
-    { label: '판매', full: '판매 관리', access: 'all', note: '판매를 등록하고 월별 판매 내역을 확인합니다.', children: [
-      { label: '판매 등록', full: '판매 등록', access: 'all', note: '상품 검색 → 수량 → 판매가(공항가격 제안, 수정 가능) → 판매일 → 반려동물(선택) → 목록 담기 → 결제수단 → 등록', data: ['rpc_create_sale', 'products', 'product_costs'] },
-      { label: '판매 내역', full: '월별 판매 내역', access: 'all', note: '일자별 · 품목별 판매수량과 매출액. 판매 등록과 같은 화면 아래쪽에 바로 표시됩니다.', data: ['sales', 'sale_items'], insight: 2 }
-    ] },
-    { label: '고객·반려동물 관리', full: '고객·반려동물 관리', access: 'all', note: '이름을 음성 또는 텍스트로 검색해 보호자 연락처, 진료·접종·약구매 이력을 확인하고 신규 보호자·반려동물을 등록합니다. 판매 등록 시 반려동물을 선택하면 그 자리에서 구매 이력에 추가됩니다.', data: ['pets', 'owners', 'pet_visits', 'sale_items'] },
-    { label: '입고', full: '입고 관리', access: 'admin', note: '상품 매입단가 조회, 입고 등록, 월별 재고 수불부(현재 숨김)로 구성됩니다. 직원에게는 메뉴가 보이지 않습니다.', insight: 1, children: [
-      { label: '매입단가 조회', full: '상품 매입단가 조회', access: 'admin', note: '초성·음성 검색으로 상품명·거래처·매입단가·공항가격(제안가)·입력시기를 바로 확인합니다. 엑셀(통합 시트)에서 가져온 값이 기본이며, 입고를 등록하면 그 단가로 갱신됩니다.', data: ['product_costs', 'suppliers'] },
-      { label: '입고 등록', full: '입고 등록', access: 'admin', note: '거래처 · 입고일 · 단가 · 로트 · 유효기간. 등록한 단가가 기준 매입단가(product_costs)에도 반영됩니다.', data: ['rpc_receive_purchase', 'suppliers', 'product_costs'] },
-      { label: '수불부', full: '월별 재고 수불부 (현재 화면에서 숨김)', access: 'admin', note: '기초 · 입고 · 출고 · 재고 수량을 보여주는 표입니다. 아직 실제 입고 등록 기록이 없어 쓸 데이터가 없으므로 사용자 요청으로 화면에서 숨겨두었습니다. 코드는 그대로 남아 있어 필요할 때 다시 보이게 할 수 있습니다.', data: ['inventory_movements', 'products'], insight: 1 }
-    ] },
-    { label: '공유 업무', full: '공유 업무', access: 'all', note: '업무를 달력으로 공유하고 상태와 댓글로 진행 상황을 남깁니다.', children: [
-      { label: '업무 달력', full: '업무 달력', access: 'all', note: '날짜별 업무와 댓글 말풍선(읽음·안 읽음)', data: ['action_tasks', 'task_comments'], insight: 4 },
-      { label: '업무 상세', full: '업무 상세', access: 'all', note: '상태 변경 · 댓글 (담당자와 admin)', data: ['task_assignees', 'task_comments'] },
-      { label: '업무 등록', full: '새 업무 등록', access: 'admin', note: '대표(admin)가 담당자를 정해 새 업무를 만듭니다.', data: ['action_tasks', 'profiles'] }
-    ] },
-    { label: '분석', full: '분석', access: 'admin', note: '매출 지표와 날씨·계절 수요를 깊이 있게 보는 화면입니다.', children: [
-      { label: '매출 KPI', full: '매출 KPI', access: 'admin', note: '매출 · 주문 · 판매 수량 · 평균 주문금액', data: ['sales', 'sale_items'], insight: 3 },
-      { label: '계절 알림', full: '날씨·계절 수요 알림', access: 'admin', note: '전년 동일 시점 수요 비교와 서울 7일 예보', data: ['environmental_data', '외부 예보(open-meteo)'], insight: 5 }
-    ] },
-    { label: '매출관리', full: '매출관리', access: 'admin', note: '가져오기 전 과거 매출(sales_legacy) 3,507건을 월별·상품명으로 조회합니다. 조회 전용, 신규 판매 등록은 판매 관리에서 합니다.', data: ['sales_legacy'] },
-    { label: '메시지 발송', full: '메시지 발송 (검토 중)', access: 'admin', note: '보호자에게 문자·카카오톡을 보내는 기능은 아직 만들지 않았습니다. 필요성만 확인되면 외부 발송 업체 연동을 별도로 진행합니다.' },
-    { label: '사이트 구조', full: '사이트 구조', access: 'admin', note: '지금 보고 계신 화면입니다.' },
-    { label: '로그인', full: '로그인 · 권한', access: 'all', note: '로그인하면 왼쪽 아래에 현재 권한(admin 또는 staff)이 표시되고 메뉴 노출이 정해집니다.', data: ['Auth', 'profiles'] }
-  ]
+// ---------- 사이트 구조: 실제 업무의 입력 → 기록 → 조회 흐름 ----------
+const siteFlowNodes = {
+  sale: { label: '판매 등록', subtitle: '상품 · 수량 · 판매가 입력', view: 'sales', note: '상품을 목록에 담고 판매 등록을 눌러야 저장됩니다. 반려동물은 선택 항목입니다.', effects: ['등록이 완료되면 판매 내역과 대시보드가 갱신됩니다.', '구매 이력을 남기려면 판매 목록에 담기 전에 반려동물을 선택하세요.'] },
+  saleRecord: { label: '판매 기록 저장', subtitle: '판매일 · 결제수단 · 판매 품목', note: '판매 한 건과 그 안에 담긴 상품별 수량·금액을 함께 기록합니다.', effects: ['목록에 담기만 한 상품은 아직 판매 기록이 아닙니다.', '재고를 관리하는 상품은 판매 수량만큼 재고가 줄어듭니다.'] },
+  history: { label: '월별 판매 내역', subtitle: '일자별 · 품목별 확인', view: 'sales', note: '판매 관리 아래쪽에서 선택한 월의 신규 판매와 엑셀 과거 판매를 함께 확인합니다. 엑셀 자료는 기존 권한에 따라 관리자에게 표시됩니다.', effects: ['방금 등록한 판매일이 속한 월을 선택하세요.', '일자별은 날짜를 눌러 상세 품목을 보고, 품목별은 상품별 합계를 봅니다.'] },
+  pets: { label: '반려동물 구매 이력', subtitle: '반려동물을 선택한 판매만', view: 'pets', note: '판매 시 선택한 반려동물의 상세 화면에서 구매한 상품·수량·금액을 확인합니다.', effects: ['반려동물을 선택하지 않은 판매는 구매 이력에 나타나지 않습니다.', '잘못 담았다면 목록에서 빼고 반려동물을 선택해 다시 담으세요.', '과거 매출 자료에는 반려동물 연결 정보가 없습니다.'] },
+  dashboard: { label: '대시보드', subtitle: '매출 · 판매 건수 · 수익', view: 'dashboard', note: '판매 기록을 바탕으로 매출과 판매 건수를 요약합니다. 수익과 마진율은 관리자에게 표시합니다.', effects: ['카드에 표시된 기준일·기준월을 함께 확인하세요.', '원가 자료가 충분하지 않으면 수익·마진율을 실제 이익으로 단정하지 마세요.'] },
+  analytics: { label: '수익성 분석', subtitle: '매출 · 원가 비교 · 저장 후 자동 갱신', view: 'analytics', admin: true, note: '판매 금액에서 기록된 원가를 빼서 매출총이익과 마진율을 계산합니다.', effects: ['입고·원가 기록이 충분해야 수익을 올바르게 판단할 수 있습니다.', '판매·입고를 등록하면 분석 자료도 자동으로 갱신됩니다. 조회 실패 안내가 나오면 새로고침해 확인하세요.'] },
+  purchase: { label: '입고 등록', subtitle: '거래처 · 상품 · 수량 · 단가', view: 'purchases', admin: true, note: '실제로 받은 상품의 수량과 단가를 확인하고 입고 등록을 누릅니다.', effects: ['매입단가를 조회하는 것만으로 입고가 등록되지는 않습니다.', '로트번호와 유효기간은 필요할 때 추가하는 선택 항목입니다.'] },
+  purchaseRecord: { label: '입고 · 원가 기록 저장', subtitle: '받은 수량과 실제 매입 단가', admin: true, note: '입고한 수량과 단가를 저장하고 원가 계산에 반영합니다.', effects: ['입고한 상품은 재고 관리 대상으로 전환되며 입고 수량이 반영됩니다.', '과거 참고 단가와 실제 입고 기록은 서로 다릅니다.'] },
+  cost: { label: '매입단가 조회', subtitle: '최근 단가 · 공항가격 확인', view: 'purchases', admin: true, note: '상품 검색으로 매입단가와 판매가 참고용 공항가격을 확인합니다.', effects: ['입고를 등록하면 기준 매입단가가 갱신됩니다.', '공항가격은 판매가 제안에 쓰는 참고값이며 실제 판매가는 고칠 수 있습니다.'] },
+  stock: { label: '상품 재고', subtitle: '상품 선택 시 현재 수량 확인', view: 'sales', note: '판매 상품을 선택할 때 현재 재고를 확인할 수 있습니다.', effects: ['재고 관리 대상으로 설정된 상품의 수량을 확인하세요.', '월별 재고 수불부는 현재 화면에서 숨겨져 있습니다.'] },
+  task: { label: '업무 · 예약 등록', subtitle: '제목 · 날짜 · 담당자 선택', view: 'tasks', admin: true, note: '관리자가 날짜와 담당자를 정해 업무를 만듭니다. 예약은 시간도 입력합니다.', effects: ['오늘 날짜의 업무·예약은 대시보드 오늘 일정에도 표시됩니다.', '업무 등록은 공유 업무 화면에서 진행합니다.'] },
+  taskRecord: { label: '공유 업무 기록', subtitle: '업무 · 담당자 · 상태 · 댓글', note: '같은 업무 기록을 달력과 오늘 일정에서 함께 확인합니다.', effects: ['날짜를 누르면 그날 업무 목록에서 원하는 업무를 선택할 수 있습니다.', '상태 변경은 관리자 또는 담당자에게 허용된 범위에서 처리합니다.'] },
+  calendar: { label: '업무 달력 · 상세', subtitle: '업무 선택 · 상태 변경 · 댓글', view: 'tasks', note: '날짜별 업무를 보고 상세 목록에서 제목 전체와 현재 상태를 확인합니다.', effects: ['같은 날 여러 업무가 있으면 각각 선택해 확인할 수 있습니다.', '상태 저장과 댓글 등록은 별도의 버튼입니다.'] },
+  schedule: { label: '대시보드 오늘 일정', subtitle: '오늘 · 내일 · 이번주 확인', view: 'dashboard', note: '조회 범위에 해당하는 업무와 예약을 시간순으로 확인합니다.', effects: ['날짜나 시간을 바꾸면 해당 조회 범위에서 확인하세요.', '다른 사용자가 바꾼 내용은 새로고침 후 확인하세요.'] },
+  legacy: { label: '가져온 과거 매출', subtitle: '이전 업무 자료 · 조회용', admin: true, note: '이전에 가져온 과거 매출 자료입니다. 새 판매는 판매 관리에서 등록합니다.', effects: ['과거 자료를 조회해도 새로운 판매가 생성되지는 않습니다.', '과거 자료에는 현재 반려동물 구매 이력 연결이 없습니다.'] },
+  legacyRecord: { label: '과거 판매 자료', subtitle: '일자 · 상품 · 수량 · 금액', admin: true, note: '현재 판매 기록과 구분해서 보관된 과거 자료입니다.', effects: ['매출관리의 월·상품 검색과 비교, 판매 관리의 월별 판매 내역에 사용합니다.', '대시보드 최근 30일 그래프는 같은 날짜의 신규 판매가 없으면 과거 매출을 참고합니다. 두 자료를 같은 날짜에 더하지 않습니다.'] },
+  legacyView: { label: '매출관리', subtitle: '월별 · 상품별 · 전년 비교', view: 'legacySales', admin: true, note: '과거 매출의 일별 추이·상품별·요일별·마진율·기간 비교를 확인합니다.', effects: ['최근 3개월과 전년 동기에도 상품 검색이 적용됩니다.', '새로 등록한 판매는 판매 관리의 월별 판매 내역에서 확인하세요.'] },
+  forecast: { label: '날씨 · 인구 예측', subtitle: '향후 14일의 참고 전망', view: 'legacySales', admin: true, note: '과거 매출과 날씨·생활인구 자료를 이용해 향후 매출을 추정합니다.', effects: ['예측은 오늘 기준 전체 상품 전망이며 조회 월·상품 검색은 적용되지 않습니다.', '예측값은 실제 매출이나 확정 예약 금액이 아닙니다.'] },
+  trend: { label: '최근 30일 매출 그래프', subtitle: '신규 판매 우선 · 과거 자료 참고', view: 'dashboard', admin: true, note: '날짜별 신규 판매가 있으면 그 금액을 사용하고, 없으면 그날의 과거 매출 자료를 참고합니다.', effects: ['과거 매출은 다른 화면과 완전히 분리된 자료가 아닙니다.', '대시보드 요약 카드와 최근 30일 그래프는 집계 기준이 다를 수 있습니다.'] },
 };
-
-const siteInsights = [
-  { title: '직원(staff)에게 재고 확인 화면이 없음', text: '입고 관리 메뉴(입고 등록과 재고 수불부)가 admin 전용이고, 입고 등록 기능도 DB에서 admin만 허용합니다. 직원이 판매 중 재고를 확인할 전용 화면이 없습니다.', idea: '재고 조회만 읽기 전용으로 직원에게 열어주는 방안을 검토해 볼 수 있습니다.' },
-  { title: '같은 판매 데이터를 여러 곳에서 따로 불러옴', text: '로그인할 때 대시보드, 분석, 판매 내역, 재고 알림이 각각 sales와 sale_items를 새로 요청합니다.', idea: '한 번 받은 데이터를 공유하면 첫 로딩이 빨라지고 화면 간 숫자도 어긋나지 않습니다.' },
-  { title: '대시보드와 분석 메뉴의 역할이 겹침', text: '매출 그래프와 분류 증감은 대시보드에, 매출 KPI는 분석 메뉴에 있어 둘 다 같은 판매 데이터를 다른 모습으로 보여줍니다.', idea: '대시보드는 오늘의 판단용, 분석은 깊이 보기용으로 기준을 정하면 사용자가 찾기 쉽습니다.' },
-  { title: '공유 업무 달력은 한 칸에 업무 2개만 표시', text: '한 날짜에 업무가 3개 이상이면 2개만 보이고, 날짜를 누르면 첫 번째 업무만 열립니다.', idea: '날짜를 누르면 그날 업무 목록을 보여주는 방식을 검토해 볼 수 있습니다.' },
-  { title: '날씨 예보를 외부 서비스에 의존', text: '서울 7일 예보를 외부 서비스(open-meteo)에서 받아옵니다. 서비스가 응답하지 않으면 예보 부분은 안내 문구로 대체됩니다.', idea: '장애 시 안내가 충분한지 점검하고, 매장 위치가 서울이 맞는지 확인해 볼 수 있습니다.' },
-  { title: '과거 매입·거래처 참고정보는 들어왔지만 실제 재고 입고 기록은 아직 없음', text: '원본 엑셀 "통합" 시트의 매입단가·공항가격·거래처·마진율은 상품 1,212건에 반영했고 거래처 119곳도 등록했습니다. 다만 이 값은 참고용 스냅샷이라, 실제 "입고 등록"을 한 번도 한 적이 없어 재고 수량과 마진율 계산에 쓰이는 이동평균원가(product_stock_costs)는 아직 0입니다.', idea: '분석 화면의 마진율·매출총이익이 지금은 원가 0 기준이라 비정상적으로 높게(100%) 보일 수 있습니다. 실제 입고 등록을 시작하면 자동으로 정확해집니다.' }
+const siteFlowRoutes = [
+  { id: 'sale', label: '판매', question: '판매를 등록하면 어디에 보이나요?', summary: '판매 등록을 완료하면 판매 내역·대시보드에 반영됩니다. 반려동물을 골랐다면 구매 이력도 연결됩니다.', stages: [['sale'], ['saleRecord'], ['history', 'pets', 'dashboard', 'analytics']], arrows: ['등록 완료', '기록을 함께 조회'], caution: '반려동물 구매 이력은 판매할 때 반려동물을 선택한 경우에만 연결됩니다.' },
+  { id: 'purchase', label: '입고 · 재고', question: '입고한 상품과 매입 단가는 어디로 이어지나요?', summary: '입고를 등록하면 수량·원가를 기록하고, 재고 확인·매입단가 조회·수익 계산에 사용합니다.', stages: [['purchase'], ['purchaseRecord'], ['stock', 'cost', 'analytics']], arrows: ['실제 입고 저장', '수량과 원가 반영'], caution: '참고 단가를 조회하는 것과 실제 입고를 등록하는 것은 다릅니다.' },
+  { id: 'tasks', label: '공유 업무', question: '등록한 업무를 직원과 어떻게 함께 보나요?', summary: '관리자가 만든 업무를 달력과 대시보드 일정에서 함께 확인하고, 상세 화면에서 상태와 댓글을 남깁니다.', stages: [['task'], ['taskRecord'], ['calendar', 'schedule']], arrows: ['담당자와 날짜 저장', '같은 업무 함께 보기'], caution: '같은 날의 업무는 날짜를 누른 뒤 목록에서 각각 선택하세요.' },
+  { id: 'legacy', label: '과거 매출', question: '과거 자료와 새 판매는 어떻게 구분되나요?', summary: '과거 자료는 매출관리·예측에 사용하며, 대시보드 최근 30일 그래프에서도 날짜별 보충 자료로 참고합니다.', stages: [['legacy'], ['legacyRecord'], ['legacyView', 'forecast', 'trend']], arrows: ['가져온 자료 보관', '조회와 비교에 사용'], caution: '새 판매는 판매 관리에서 등록합니다. 과거 자료 조회로 새 판매나 반려동물 구매 이력이 만들어지지 않습니다.' },
 ];
-
-// org-chart 항목과 데이터 연결 그래프 노드/화살표가 함께 쓰는 설명 팝업
-function openStructureDialog(node) {
-  const dialog = document.querySelector('#structureDialog');
-  document.querySelector('#structureDialogEyebrow').textContent = node.access === 'admin' ? 'ADMIN 전용' : '전체 공통';
-  document.querySelector('#structureDialogTitle').textContent = node.full;
-  const body = document.querySelector('#structureDialogBody');
-  body.replaceChildren();
-  if (node.note) { const note = document.createElement('p'); note.className = 'dialog-note'; note.textContent = node.note; body.append(note); }
-  if (node.data?.length) {
-    const label = document.createElement('p'); label.className = 'dialog-label'; label.textContent = '연결된 데이터';
-    const chips = document.createElement('div'); chips.className = 'tree-data';
-    node.data.forEach((name) => { const chip = document.createElement('span'); chip.className = 'tag data'; chip.textContent = name; chips.append(chip); });
-    body.append(label, chips);
-  }
-  if (node.insight) {
-    const insight = siteInsights[node.insight - 1];
-    const box = document.createElement('div'); box.className = 'dialog-insight';
-    box.innerHTML = '<b></b><p></p><p class="insight-idea"></p>';
-    box.querySelector('b').textContent = `개선 포인트 ${node.insight}. ${insight.title}`;
-    box.querySelectorAll('p')[0].textContent = insight.text;
-    box.querySelector('.insight-idea').textContent = `검토할 점: ${insight.idea}`;
-    body.append(box);
-  }
-  dialog.showModal();
-}
-
-// ---------- 사이트 구조: 데이터 연결 그래프 ----------
-// 한 화면에서의 입력이 다른 화면에 실제로 어떻게 반영되는지(옵시디언 그래프 느낌의 점-화살표 지도).
-// 좌표는 고정값(viewBox 0 0 1000 560)이라 레이아웃이 바뀔 때만 손으로 조정하면 됩니다.
-const siteFlowNodes = [
-  { id: 'sale', label: '판매 등록', full: '판매 관리 · 판매 등록', access: 'all', x: 190, y: 80, note: '상품·수량·판매가(공항가격 제안)·반려동물을 담아 등록하면 여러 화면에 동시에 반영됩니다.', data: ['rpc_create_sale'] },
-  { id: 'history', label: '판매 내역', full: '판매 관리 · 월별 판매 내역', access: 'all', x: 500, y: 80, note: '판매 등록 화면 바로 아래에서 같은 월의 판매 건을 확인합니다.', data: ['sales', 'sale_items'] },
-  { id: 'pets', label: '고객·반려동물 관리', full: '고객·반려동물 관리', access: 'all', x: 820, y: 80, note: '판매 등록 시 반려동물을 선택했다면, 그 반려동물의 "구매 이력"에 이번 판매가 바로 추가됩니다.', data: ['sale_items', 'pets'] },
-  { id: 'costLookup', label: '매입단가 조회', full: '입고 관리 · 상품 매입단가 조회', access: 'admin', x: 190, y: 260, note: '엑셀에서 가져온 매입단가·공항가격을 보여주고, 입고 등록을 하면 이 값이 갱신됩니다.', data: ['product_costs'] },
-  { id: 'purchase', label: '입고 등록', full: '입고 관리 · 입고 등록', access: 'admin', x: 190, y: 440, note: '거래처·단가를 등록하면 매입단가 조회 값과 분석 화면의 원가 계산이 함께 갱신됩니다.', data: ['rpc_receive_purchase'] },
-  { id: 'dashboard', label: '대시보드 요약 카드', full: '대시보드 · 요약 카드', access: 'all', x: 500, y: 260, note: '오늘 매출·판매 건수·이번 달 판매 수익이 판매 등록 즉시 바뀝니다.', data: ['sales'] },
-  { id: 'analytics', label: '분석(매출총이익·마진율)', full: '분석 · 수익성 분석', access: 'admin', x: 820, y: 260, note: '판매 등록의 매출과 입고 등록의 매입원가를 함께 계산해 매출총이익과 마진율을 보여줍니다.', data: ['v_sale_items_profit'] },
-  { id: 'legacy', label: '매출관리(과거 매출)', full: '매출관리', access: 'admin', x: 500, y: 440, note: '엑셀에서 가져온 과거 매출(sales_legacy) 전용 조회 화면입니다. 지금 판매 등록·대시보드·분석과는 서로 연결되어 있지 않은 별도 데이터입니다.', data: ['sales_legacy'], isolated: true },
-];
-const siteFlowEdges = [
-  { from: 'sale', to: 'history', label: '등록 즉시 집계' },
-  { from: 'sale', to: 'pets', label: '반려동물 선택 시 구매이력 추가' },
-  { from: 'sale', to: 'dashboard', label: '오늘 매출·판매 수익' },
-  { from: 'sale', to: 'analytics', label: '매출·마진율 계산' },
-  { from: 'purchase', to: 'costLookup', label: '입고 단가로 갱신' },
-  { from: 'costLookup', to: 'sale', label: '공항가격을 판매가 제안값으로' },
-  { from: 'purchase', to: 'analytics', label: '매입원가 반영' },
-];
+let selectedSiteFlow = 'sale';
 
 function renderSiteFlowGraph() {
   const container = document.querySelector('#siteFlowGraph');
-  if (!container) return;
-  const byId = Object.fromEntries(siteFlowNodes.map((node) => [node.id, node]));
-  const NODE_W = 150, NODE_H = 46;
-  const edgePaths = siteFlowEdges.map((edge, index) => {
-    const a = byId[edge.from], b = byId[edge.to];
-    const dx = b.x - a.x, dy = b.y - a.y;
-    const len = Math.hypot(dx, dy) || 1;
-    const ux = dx / len, uy = dy / len;
-    // 노드 테두리 바로 바깥에서 시작/끝나게 살짝 당김(화살표가 박스 안으로 파고들지 않도록)
-    const pad = 30;
-    const x1 = a.x + ux * pad, y1 = a.y + uy * pad;
-    const x2 = b.x - ux * pad, y2 = b.y - uy * pad;
-    const midX = (x1 + x2) / 2, midY = (y1 + y2) / 2;
-    return { edge, x1, y1, x2, y2, midX, midY, id: `flow-edge-${index}` };
+  const route = siteFlowRoutes.find((item) => item.id === selectedSiteFlow) || siteFlowRoutes[0];
+  container.replaceChildren();
+  const picker = document.createElement('div');
+  picker.className = 'flow-route-picker';
+  picker.setAttribute('role', 'group');
+  picker.setAttribute('aria-label', '연결 흐름 선택');
+  siteFlowRoutes.forEach((item) => {
+    const button = document.createElement('button');
+    button.type = 'button'; button.dataset.flow = item.id;
+    button.textContent = item.label;
+    button.setAttribute('aria-pressed', String(item.id === route.id));
+    button.addEventListener('click', () => {
+      selectedSiteFlow = item.id;
+      renderSiteFlowGraph();
+      container.querySelector(`[data-flow="${item.id}"]`).focus({ preventScroll: true });
+    });
+    picker.append(button);
   });
-  const svg = `
-    <svg viewBox="0 0 1000 530" role="img" aria-label="데이터 연결 그래프">
-      <defs><marker id="flowArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" /></marker></defs>
-      ${edgePaths.map((p) => `<g class="flow-edge" tabindex="0" role="button" aria-label="${escapeText(p.edge.label)}">
-        <line x1="${p.x1}" y1="${p.y1}" x2="${p.x2}" y2="${p.y2}" marker-end="url(#flowArrow)" />
-        <rect class="flow-edge-label-bg" x="${p.midX - p.edge.label.length * 5.2}" y="${p.midY - 11}" width="${p.edge.label.length * 10.4}" height="18" rx="4" />
-        <text x="${p.midX}" y="${p.midY + 3}" text-anchor="middle">${escapeText(p.edge.label)}</text>
-      </g>`).join('')}
-      ${siteFlowNodes.map((node) => `<g class="flow-node ${node.access} ${node.isolated ? 'isolated' : ''}" tabindex="0" role="button" data-id="${node.id}" aria-label="${escapeText(node.full)} 설명 보기">
-        <rect x="${node.x - NODE_W / 2}" y="${node.y - NODE_H / 2}" width="${NODE_W}" height="${NODE_H}" rx="10" />
-        <text x="${node.x}" y="${node.y + 5}" text-anchor="middle">${escapeText(node.label)}</text>
-      </g>`).join('')}
-    </svg>
-    <p class="flow-graph-note"><span class="flow-dot all"></span> 전체 공통 · <span class="flow-dot admin"></span> admin 전용 · <span class="flow-dot isolated"></span> 다른 화면과 연결 안 됨</p>`;
-  container.innerHTML = svg;
-  container.querySelectorAll('.flow-node').forEach((el) => {
-    const node = byId[el.dataset.id];
-    el.addEventListener('click', () => openStructureDialog(node));
-    el.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openStructureDialog(node); } });
+  const introduction = document.createElement('div'); introduction.className = 'flow-introduction';
+  const heading = document.createElement('h3'); heading.textContent = route.question;
+  const summary = document.createElement('p'); summary.textContent = route.summary;
+  introduction.append(heading, summary);
+  const diagram = document.createElement('div'); diagram.className = 'flow-diagram'; diagram.setAttribute('role', 'group'); diagram.setAttribute('aria-label', route.question);
+  const detail = document.createElement('section'); detail.id = 'flowNodeDetail'; detail.className = 'flow-node-detail';
+  detail.setAttribute('aria-live', 'polite'); detail.setAttribute('aria-atomic', 'true');
+  const selectNode = (id, reveal = false) => {
+    const node = siteFlowNodes[id];
+    diagram.querySelectorAll('button[data-node]').forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.node === id)));
+    detail.replaceChildren();
+    const title = document.createElement('h4'); title.textContent = node.label;
+    const note = document.createElement('p'); note.textContent = node.note;
+    const list = document.createElement('ul');
+    node.effects.forEach((text) => { const li = document.createElement('li'); li.textContent = text; list.append(li); });
+    detail.append(title, note, list);
+    if (node.view) {
+      const nav = document.querySelector(`.sidebar .nav-button[data-view="${node.view}"]`);
+      if (nav && !nav.hidden) {
+        const go = document.createElement('button'); go.type = 'button'; go.className = 'login-button'; go.textContent = `${nav.textContent.trim()} 화면 열기`;
+        go.addEventListener('click', () => {
+          nav.click();
+          if (id === 'forecast') document.querySelector('#legacySalesViewTabs [data-view="weather"]').click();
+          const destination = document.querySelector(id === 'history' ? '#salesHistoryTitle' : '#pageTitle');
+          destination.tabIndex = -1;
+          destination.focus({ preventScroll: true });
+          if (id === 'history') destination.scrollIntoView({ block: 'start' });
+          else window.scrollTo({ top: 0 });
+        });
+        detail.append(go);
+      }
+    }
+    if (reveal && matchMedia('(max-width: 1100px)').matches) {
+      detail.tabIndex = -1;
+      detail.focus({ preventScroll: true });
+      detail.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    }
+  };
+  route.stages.forEach((ids, index) => {
+    if (index > 0) {
+      const arrow = document.createElement('div'); arrow.className = 'flow-connector';
+      const icon = document.createElement('span'); icon.className = 'flow-direction'; icon.textContent = '→'; icon.setAttribute('aria-hidden', 'true');
+      const text = document.createElement('span'); text.textContent = route.arrows[index - 1]; arrow.append(icon, text); diagram.append(arrow);
+    }
+    const stage = document.createElement('section'); stage.className = 'flow-stage';
+    const stageHeading = document.createElement('h4'); stageHeading.className = 'flow-stage-heading'; stageHeading.textContent = `${index + 1}. ${['어디서 입력하나요', '무엇이 기록되나요', '어디에서 확인하나요'][index]}`; stage.append(stageHeading);
+    ids.forEach((id) => {
+      const node = siteFlowNodes[id];
+      const button = document.createElement('button'); button.type = 'button'; button.className = 'flow-card'; button.dataset.node = id; button.setAttribute('aria-controls', 'flowNodeDetail');
+      const title = document.createElement('strong'); title.textContent = node.label;
+      const subtitle = document.createElement('span'); subtitle.textContent = node.subtitle;
+      const badge = document.createElement('small'); badge.textContent = node.admin ? '관리자 전용' : '공통 업무';
+      button.append(title, subtitle, badge); button.addEventListener('click', () => selectNode(id, true)); stage.append(button);
+    });
+    diagram.append(stage);
   });
-  container.querySelectorAll('.flow-edge').forEach((el, index) => {
-    const { edge } = edgePaths[index];
-    const from = byId[edge.from], to = byId[edge.to];
-    const open = () => openStructureDialog({ full: `${from.label} → ${to.label}`, access: from.access, note: edge.label });
-    el.addEventListener('click', open);
-    el.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); open(); } });
-  });
+  const caution = document.createElement('p'); caution.className = 'flow-caution'; caution.textContent = route.caution;
+  const hint = document.createElement('p'); hint.className = 'flow-help'; hint.textContent = '상자를 누르면 아래에서 연결 조건과 확인 방법을 볼 수 있습니다.';
+  container.append(picker, introduction, diagram, caution, hint, detail);
+  selectNode(route.stages[0][0]);
 }
 
 function renderSiteStructure() {
-  const countNodes = (node) => 1 + (node.children || []).reduce((sum, child) => sum + countNodes(child), 0);
-  const tables = new Set();
-  const collect = (node) => { (node.data || []).forEach((item) => tables.add(item)); (node.children || []).forEach(collect); };
-  collect(siteTreeData);
-  const menus = siteTreeData.children;
-  const stats = document.querySelector('#structureStats');
-  stats.replaceChildren(...[
-    ['메뉴', menus.length], ['화면 영역', countNodes(siteTreeData) - menus.length - 1],
-    ['admin 전용 메뉴', menus.filter((menu) => menu.access === 'admin').length], ['연결 데이터', tables.size], ['개선 포인트', siteInsights.length]
-  ].map(([name, value]) => { const card = document.createElement('div'); card.innerHTML = '<strong></strong><span></span>'; card.querySelector('strong').textContent = value; card.querySelector('span').textContent = name; return card; }));
-
-  const makeButton = (node) => {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = `org-node ${node.access}`;
-    button.textContent = node.label;
-    if (node.insight) { const flag = document.createElement('span'); flag.className = 'insight-flag'; flag.textContent = node.insight; button.append(flag); }
-    button.setAttribute('aria-label', `${node.full} 설명 보기`);
-    button.addEventListener('click', () => openStructureDialog(node));
-    return button;
-  };
-  // 위(사이트) → 가운데(메뉴) → 아래(세부 화면) 순서로 그림
-  const chart = document.querySelector('#siteTree');
-  const root = document.createElement('div'); root.className = 'org-root'; root.append(makeButton(siteTreeData));
-  const menuRow = document.createElement('ul'); menuRow.className = 'org-menus';
-  siteTreeData.children.forEach((menu) => {
-    const menuItem = document.createElement('li');
-    menuItem.append(makeButton(menu));
-    if (menu.children?.length) {
-      const leaves = document.createElement('ul'); leaves.className = 'org-leaves';
-      menu.children.forEach((leaf) => { const leafItem = document.createElement('li'); leafItem.append(makeButton(leaf)); leaves.append(leafItem); });
-      menuItem.append(leaves);
-    }
-    menuRow.append(menuItem);
-  });
-  chart.replaceChildren(root, menuRow);
   renderSiteFlowGraph();
-  const dialog = document.querySelector('#structureDialog');
-  if (!dialog.dataset.ready) {
-    dialog.dataset.ready = '1';
-    document.querySelector('#structureDialogClose').addEventListener('click', () => dialog.close());
-    dialog.addEventListener('click', (event) => { if (event.target === dialog) dialog.close(); });
-  }
-  document.querySelector('#structureInsights').replaceChildren(...siteInsights.map((insight, index) => {
-    const card = document.createElement('article');
-    card.className = 'insight-card'; card.id = `insight-${index + 1}`;
-    card.innerHTML = '<span class="insight-no"></span><div><h4></h4><p></p><p class="insight-idea"></p></div>';
-    card.querySelector('.insight-no').textContent = index + 1;
-    card.querySelector('h4').textContent = insight.title;
-    card.querySelector('p').textContent = insight.text;
-    card.querySelector('.insight-idea').textContent = `검토할 점: ${insight.idea}`;
-    return card;
-  }));
 }
 
 document.querySelectorAll('[data-go]').forEach((button) => {
@@ -664,7 +597,7 @@ function isClosedDay(meta) {
 
 async function loadLegacySales() {
   try {
-    legacySales = await apiAll('sales_legacy?select=sold_on,product_name_raw,quantity,unit_price,amount,margin_rate&order=sold_on.desc');
+    legacySales = await apiAll('sales_legacy?select=id,product_id,sold_on,product_name_raw,quantity,unit_price,unit_cost,amount,profit,margin_rate&order=sold_on.desc');
   } catch {
     legacySalesSummary.textContent = '매출 데이터를 불러오지 못했습니다.';
     return;
@@ -716,7 +649,7 @@ function setBarChart(items, formatAxisValue = wonShort) {
 }
 
 const LEGACY_SALES_COL_WIDTH = {
-  '일자': 78, '요일': 48, '수량': 84, '단가': 96, '금액': 110, '마진율': 72,
+  '일자': 104, '요일': 72, '수량': 84, '단가': 96, '판매단가': 104, '매입단가': 104, '수익': 120, '금액': 110, '마진율': 72,
   '건수': 72, '비중': 68, '평균마진율': 94, '거래건수': 86, '전월대비': 86,
   '전년동월대비': 104, '건당 평균금액': 104, '매출액': 110,
   '예상기온': 90, '예상강수': 90, '공휴일': 90, '예측 매출액': 120, '추정인구': 100,
@@ -724,15 +657,22 @@ const LEGACY_SALES_COL_WIDTH = {
 
 function setTableHead(labels, wideIndex) {
   legacySalesHead.replaceChildren();
+  const numericLabels = new Set(['수량', '단가', '판매단가', '매입단가', '수익', '금액', '마진율', '건수', '비중', '평균마진율', '거래건수', '전월대비', '전년동월대비', '건당 평균금액', '매출액', '예상기온', '예상강수', '예측 매출액', '추정인구']);
   const tr = document.createElement('tr');
   labels.forEach((label, i) => {
     const th = document.createElement('th');
     th.textContent = label;
-    if (i === wideIndex) { th.classList.add('col-wide'); th.style.width = '280px'; }
+    th.scope = 'col';
+    th.classList.toggle('numeric', numericLabels.has(label));
+    if (i === wideIndex) { th.classList.add('col-wide'); th.style.width = label === '상품명' ? '160px' : '280px'; }
     else th.style.width = `${LEGACY_SALES_COL_WIDTH[label] || 90}px`;
     tr.append(th);
   });
   legacySalesHead.append(tr);
+  const wrap = legacySalesRows.closest('.table-wrap');
+  wrap.tabIndex = 0;
+  wrap.setAttribute('role', 'region');
+  wrap.setAttribute('aria-label', '매출 상세 표 · 좌우와 위아래로 스크롤하여 확인하세요');
 }
 
 function setRows(rowsData, wideIndex, totalCells) {
@@ -740,7 +680,7 @@ function setRows(rowsData, wideIndex, totalCells) {
   if (totalCells) {
     const totalTr = document.createElement('tr');
     totalTr.className = 'legacy-sales-total-row';
-    totalCells.forEach((value) => { const td = document.createElement('td'); td.textContent = value; totalTr.append(td); });
+    totalCells.forEach((value, i) => { const td = document.createElement('td'); td.textContent = value; if (legacySalesHead.querySelectorAll('th')[i]?.classList.contains('numeric')) td.classList.add('numeric'); if (i === wideIndex) td.classList.add('col-wide'); totalTr.append(td); });
     legacySalesRows.append(totalTr);
   }
   rowsData.forEach(({ cells, cls }) => {
@@ -749,6 +689,7 @@ function setRows(rowsData, wideIndex, totalCells) {
     cells.forEach((value, i) => {
       const td = document.createElement('td');
       td.textContent = value;
+      if (legacySalesHead.querySelectorAll('th')[i]?.classList.contains('numeric')) td.classList.add('numeric');
       if (i === wideIndex) td.classList.add('col-wide');
       tr.append(td);
     });
@@ -758,6 +699,12 @@ function setRows(rowsData, wideIndex, totalCells) {
 
 function marginPct(row) {
   return row.margin_rate == null ? null : Number(row.margin_rate) * 100;
+}
+
+function legacySaleProfit(row) {
+  if (row.profit != null && Number.isFinite(Number(row.profit))) return Number(row.profit);
+  if ([row.amount, row.quantity, row.unit_cost].some((value) => value == null || !Number.isFinite(Number(value)))) return null;
+  return Number(row.amount) - Number(row.quantity) * Number(row.unit_cost);
 }
 
 function renderDailyView(rows) {
@@ -775,18 +722,23 @@ function renderDailyView(rows) {
     cls: meta.holiday ? 'holiday' : meta.isWeekend ? 'weekend' : '',
     title: `${dateText} (${meta.weekday})${meta.holiday ? ' · ' + meta.holiday : ''} · ${won(amount)}`,
   })));
-  setTableHead(['일자', '요일', '상품명', '수량', '단가', '금액', '마진율'], 2);
+  setTableHead(['일자', '요일', '상품명', '수량', '판매단가', '매입단가', '매출액', '마진율', '수익'], 2);
   if (!rows.length) { setRows([], 2, null); return; }
   const totalAmount = rows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
   const totalQty = rows.reduce((sum, row) => sum + Number(row.quantity || 0), 0);
+  const profits = rows.map(legacySaleProfit).filter((value) => value != null);
+  const totalProfit = profits.reduce((sum, value) => sum + value, 0);
+  const missingProfit = rows.length - profits.length;
+  const profitNote = document.querySelector('#legacySalesProfitNote');
+  profitNote.textContent = `판매단가·매입단가는 엑셀에 저장된 값입니다. 수익은 엑셀의 수익을 우선 표시하고, 없으면 매출액 − 수량 × 매입단가로 계산합니다.${missingProfit ? ` 수익을 확인할 수 없는 ${missingProfit.toLocaleString('ko-KR')}건은 —로 표시하며 수익 합계에서 제외합니다.` : ''}`;
   setRows(rows.map((row) => {
     const meta = dateMeta(row.sold_on);
     const weekdayText = meta.holiday ? `${meta.weekday} · ${meta.holiday}` : meta.weekday;
     return {
       cls: meta.holiday ? 'is-holiday' : meta.isWeekend ? 'is-weekend' : '',
-      cells: [row.sold_on, weekdayText, row.product_name_raw, row.quantity, won(row.unit_price), won(row.amount), row.margin_rate == null ? '—' : `${marginPct(row).toFixed(1)}%`],
+      cells: [row.sold_on, weekdayText, row.product_name_raw, row.quantity == null ? '—' : countText(Number(row.quantity)), row.unit_price == null ? '—' : won(row.unit_price), row.unit_cost == null ? '—' : won(row.unit_cost), won(row.amount), row.margin_rate == null ? '—' : `${marginPct(row).toFixed(1)}%`, legacySaleProfit(row) == null ? '—' : won(legacySaleProfit(row))],
     };
-  }), 2, ['합계', '', `${rows.length.toLocaleString('ko-KR')}건`, totalQty.toLocaleString('ko-KR'), '—', won(totalAmount), '—']);
+  }), 2, ['합계', '', `${rows.length.toLocaleString('ko-KR')}건`, totalQty.toLocaleString('ko-KR'), '—', '—', won(totalAmount), '—', profits.length ? `${won(totalProfit)}${missingProfit ? ' (확인분)' : ''}` : '—']);
 }
 
 function renderProductView(rows) {
@@ -854,7 +806,8 @@ function renderMarginView(rows) {
 }
 
 function monthTotals(month) {
-  const rows = legacySales.filter((row) => row.sold_on.startsWith(month));
+  const keyword = legacySalesSearch.value.trim();
+  const rows = legacySales.filter((row) => row.sold_on.startsWith(month) && matchesKoreanText(row.product_name_raw, keyword));
   return { month, amount: rows.reduce((sum, row) => sum + Number(row.amount || 0), 0), qty: rows.reduce((sum, row) => sum + Number(row.quantity || 0), 0), count: rows.length };
 }
 
@@ -889,24 +842,23 @@ function renderYoyView() {
 let environmentalWeather = [];
 let dongPopulationDaily = [];
 let weatherPopLoaded = false;
-let weatherPopLoading = false;
+let weatherPopPromise = null;
 let weatherForecastCache = null;
-let weatherForecastLoading = false;
+let weatherForecastPromise = null;
 let weatherModelCache = null;
 
 async function ensureWeatherPopData() {
-  if (weatherPopLoaded || weatherPopLoading) return;
-  weatherPopLoading = true;
-  try {
-    [environmentalWeather, dongPopulationDaily] = await Promise.all([
-      apiAll('environmental_data?select=date,temp_mean,precipitation_mm,humidity_mean&order=date.asc'),
-      apiAll('dong_population_daily?select=measured_on,avg_population,business_hours_avg&order=measured_on.asc'),
-    ]);
-  } catch {
-    environmentalWeather = []; dongPopulationDaily = [];
-  }
-  weatherPopLoaded = true;
-  weatherPopLoading = false;
+  if (weatherPopLoaded) return;
+  if (!weatherPopPromise) weatherPopPromise = (async () => {
+    try {
+      [environmentalWeather, dongPopulationDaily] = await Promise.all([
+        apiAll('environmental_data?select=date,temp_mean,precipitation_mm,humidity_mean&order=date.asc'),
+        apiAll('dong_population_daily?select=measured_on,avg_population,business_hours_avg&order=measured_on.asc'),
+      ]);
+    } catch { environmentalWeather = []; dongPopulationDaily = []; }
+    weatherPopLoaded = true;
+  })();
+  return weatherPopPromise;
 }
 
 async function fetchForecastWeather() {
@@ -914,7 +866,11 @@ async function fetchForecastWeather() {
     latitude: '37.5486', longitude: '127.1248', timezone: 'Asia/Seoul', forecast_days: '14',
     daily: 'weather_code,temperature_2m_mean,temperature_2m_max,temperature_2m_min,precipitation_sum',
   });
-  const response = await fetch(`https://api.open-meteo.com/v1/forecast?${query}`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+  let response;
+  try { response = await fetch(`https://api.open-meteo.com/v1/forecast?${query}`, { signal: controller.signal }); }
+  finally { clearTimeout(timeout); }
   if (!response.ok) throw new Error('예보를 불러오지 못했습니다.');
   const { daily } = await response.json();
   return daily.time.map((date, i) => ({
@@ -924,10 +880,11 @@ async function fetchForecastWeather() {
 }
 
 async function ensureForecastWeather() {
-  if (weatherForecastCache || weatherForecastLoading) return;
-  weatherForecastLoading = true;
-  try { weatherForecastCache = await fetchForecastWeather(); } catch { weatherForecastCache = []; }
-  weatherForecastLoading = false;
+  if (weatherForecastCache) return;
+  if (!weatherForecastPromise) weatherForecastPromise = (async () => {
+    try { weatherForecastCache = await fetchForecastWeather(); } catch { weatherForecastCache = []; }
+  })();
+  return weatherForecastPromise;
 }
 
 function dot(a, b) { return a.reduce((sum, v, i) => sum + v * b[i], 0); }
@@ -1299,6 +1256,17 @@ function renderWeatherView() {
     });
     return;
   }
+  if (!weatherForecastCache.length) {
+    legacySalesChart.classList.add('weather-mode'); legacySalesChartAxis.hidden = true;
+    const message = document.createElement('p'); message.className = 'weather-empty';
+    message.textContent = '날씨 예보를 불러오지 못했습니다. 연결 상태를 확인한 뒤 다시 시도해 주세요. 다른 매출 탭은 계속 이용할 수 있습니다.';
+    const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'login-button'; retry.textContent = '날씨 예보 다시 불러오기';
+    retry.addEventListener('click', () => { weatherForecastCache = null; weatherForecastPromise = null; renderLegacySales(); });
+    legacySalesChart.replaceChildren(message, retry);
+    setTableHead(['안내'], 0); setRows([{ cells: ['예보 연결을 확인해 주세요.'] }], 0, null);
+    legacySalesMonthSummary.hidden = true;
+    return;
+  }
   const model = buildWeatherModel();
   if (!model) {
     legacySalesChart.classList.add('weather-mode'); legacySalesChartAxis.hidden = true;
@@ -1324,11 +1292,7 @@ function renderWeatherView() {
   })), 6, null);
 
   legacySalesMonthSummary.hidden = false;
-  const r2Text = model.r2 == null ? 'R² 산출 불가' : `설명력 R²=${model.r2.toFixed(2)}`;
-  const tempText = model.pearsonTemp == null ? '' : ` · 기온 상관 r=${model.pearsonTemp.toFixed(2)}`;
-  const precipText = model.pearsonPrecip == null ? '' : ` · 강수 상관 r=${model.pearsonPrecip.toFixed(2)}`;
-  const popText = model.pearsonPop == null ? ' · 생활인구 상관: 겹치는 기간 부족' : ` · 생활인구 상관 r=${model.pearsonPop.toFixed(2)} (실측 겹치는 ${model.popN}일 기준)`;
-  legacySalesMonthSummary.textContent = `영업일 ${model.trainRows.length}일 학습(일요일·공휴일 휴무 제외, 요일·기온·강수·진드기 성수기·생활인구·계절성·전주매출·최근7일평균 기반 회귀) · ${r2Text}${tempText}${precipText}${popText}`;
+  legacySalesMonthSummary.textContent = `과거 영업일 ${model.trainRows.length.toLocaleString('ko-KR')}일의 매출과 날씨·요일·계절·생활인구를 참고한 예상입니다. 실제 매출과 다를 수 있으니 참고용으로 확인하세요.`;
 }
 
 const legacySalesViewConfig = {
@@ -1343,6 +1307,14 @@ const legacySalesViewConfig = {
 
 function renderLegacySales() {
   const keyword = legacySalesSearch.value.trim();
+  const isForecast = legacySalesView === 'weather';
+  legacySalesRows.closest('table').dataset.view = legacySalesView;
+  document.querySelector('#legacySalesProfitNote').hidden = legacySalesView !== 'daily';
+  legacySalesSearch.disabled = isForecast;
+  legacySalesMonth.disabled = isForecast;
+  document.querySelector('#legacySalesFilterHint').textContent = isForecast
+    ? '예측은 오늘부터 14일간의 전체 상품 매출 기준입니다. 조회 월과 상품 검색은 적용되지 않습니다.'
+    : '조회 월과 상품 검색이 표와 그래프에 함께 적용됩니다. 비교 탭은 선택한 월을 기준으로 비교합니다.';
   const monthRows = legacySales.filter((row) => row.sold_on.startsWith(selectedLegacySalesMonth));
   const filteredRows = monthRows.filter((row) => matchesKoreanText(row.product_name_raw, keyword));
   const config = legacySalesViewConfig[legacySalesView];
@@ -1351,6 +1323,15 @@ function renderLegacySales() {
 
   if (!filteredRows.length && legacySalesView !== 'recent3m' && legacySalesView !== 'yoy' && legacySalesView !== 'weather') {
     legacySalesMonthSummary.hidden = true;
+    const headings = {
+      daily: [['일자', '요일', '상품명', '수량', '판매단가', '매입단가', '매출액', '마진율', '수익'], 2],
+      product: [['상품명', '건수', '수량', '매출액', '비중', '평균마진율'], 0],
+      weekday: [['요일', '거래건수', '수량', '매출액', '건당 평균금액'], 3],
+      margin: [['상품명', '매출액', '평균마진율'], 0],
+    };
+    setTableHead(...headings[legacySalesView]);
+    document.querySelector('#legacySalesProfitNote').hidden = true;
+    legacySalesEmpty.textContent = keyword ? '검색한 상품의 매출이 없습니다. 검색어를 지우거나 조회 월을 바꿔주세요.' : '해당 월의 매출 데이터가 없습니다.';
     setBarChart([]);
     legacySalesRows.replaceChildren();
     legacySalesEmpty.hidden = false;
@@ -1377,6 +1358,7 @@ legacySalesViewTabs.addEventListener('click', (event) => {
   if (!button) return;
   legacySalesView = button.dataset.view;
   legacySalesViewTabs.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b === button));
+  legacySalesViewTabs.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b === button)));
   renderLegacySales();
 });
 
@@ -1517,7 +1499,7 @@ function renderProductSuggestions(keyword = '') {
 function moveSuggestion(step) {
   const options = [...saleProductSuggestions.querySelectorAll('.product-suggestion')];
   if (!options.length) return;
-  activeSuggestionIndex = (activeSuggestionIndex + step + options.length) % options.length;
+  activeSuggestionIndex = activeSuggestionIndex < 0 ? (step > 0 ? 0 : options.length - 1) : (activeSuggestionIndex + step + options.length) % options.length;
   options.forEach((option, index) => option.classList.toggle('active', index === activeSuggestionIndex));
   const activeOption = options[activeSuggestionIndex];
   saleProductSearch.setAttribute('aria-activedescendant', activeOption.id);
@@ -1570,7 +1552,7 @@ function renderSalePetSuggestions(keyword = '') {
 function moveSalePetSuggestion(step) {
   const options = [...salePetSuggestions.querySelectorAll('.product-suggestion')];
   if (!options.length) return;
-  activeSalePetSuggestionIndex = (activeSalePetSuggestionIndex + step + options.length) % options.length;
+  activeSalePetSuggestionIndex = activeSalePetSuggestionIndex < 0 ? (step > 0 ? 0 : options.length - 1) : (activeSalePetSuggestionIndex + step + options.length) % options.length;
   options.forEach((option, index) => option.classList.toggle('active', index === activeSalePetSuggestionIndex));
   const activeOption = options[activeSalePetSuggestionIndex];
   salePetSearch.setAttribute('aria-activedescendant', activeOption.id);
@@ -1582,6 +1564,84 @@ function setDashboardValue(index, value, detail) {
   if (!cards[index]) return;
   cards[index].querySelector('strong').textContent = value;
   cards[index].querySelector('span').textContent = detail;
+}
+
+// 대시보드 알림은 외부 기사를 브라우저에서 직접 긁지 않고, 배포 때 확인한 공식 발표 목록만 읽는다.
+// 파일 내려받기와 허가되지 않은 외부 도메인은 뉴스 링크가 될 수 없다.
+const SAFE_NEWS_ORIGINS = new Set([
+  'https://www.mafra.go.kr', 'https://news.seoul.go.kr', 'https://www.koreadognews.co.kr', 'https://www.dailyvet.co.kr'
+]);
+const NEWS_SECTION_ORDER = ['policy', 'info'];
+const NEWS_SECTION_LABEL = { policy: '정책·복지 공지', info: '국내 반려동물·수의학 새 글' };
+function safeNewsUrl(value) {
+  try {
+    const url = new URL(value);
+    const path = url.pathname.toLowerCase();
+    if (!SAFE_NEWS_ORIGINS.has(url.origin)) return null;
+    if (/(download|export|\.csv$|\.xlsx?$|\.pdf$|\.zip$)/.test(path)) return null;
+    return url.href;
+  } catch { return null; }
+}
+
+function renderDashboardNews(items) {
+  const list = document.querySelector('#dashboardNewsList');
+  if (!list) return;
+  list.replaceChildren();
+  if (!Array.isArray(items) || !items.length) {
+    list.innerHTML = '<p class="empty-message">원문 링크를 안전하게 확인하는 중입니다. 확인 전에는 외부 링크를 표시하지 않습니다.</p>';
+    return;
+  }
+  NEWS_SECTION_ORDER.forEach((section) => {
+    const sectionItems = items.filter((item) => item.section === section);
+    if (!sectionItems.length) return;
+    const group = document.createElement('section');
+    group.className = 'dashboard-news-group';
+    const heading = document.createElement('h3'); heading.textContent = NEWS_SECTION_LABEL[section];
+    group.append(heading);
+    sectionItems.forEach((item) => {
+    const safeUrl = safeNewsUrl(item?.url);
+    if (!item?.title || !safeUrl || !item?.source || !item?.date) return;
+    const article = document.createElement('article');
+    article.className = 'dashboard-news-item';
+    const meta = document.createElement('div');
+    meta.className = 'dashboard-news-meta';
+    const tag = document.createElement('span'); tag.className = `news-tag ${item.category || 'notice'}`; tag.textContent = item.categoryLabel || '알림';
+    const source = document.createElement('span'); source.textContent = item.source;
+    const date = document.createElement('time'); date.dateTime = item.date; date.textContent = item.date.replaceAll('-', '.');
+    meta.append(tag, source, date);
+    const link = document.createElement('a');
+    link.href = safeUrl; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = item.title;
+    link.setAttribute('aria-label', `${item.title} 원문 열기`);
+    const summary = document.createElement('p'); summary.className = 'dashboard-news-summary'; summary.textContent = item.summaryKo || '';
+    article.append(meta, link, summary);
+    group.append(article);
+  });
+    if (group.querySelector('.dashboard-news-item')) list.append(group);
+  });
+  if (!list.childElementCount) list.innerHTML = '<p class="empty-message">원문 링크를 안전하게 확인하는 중입니다. 확인 전에는 외부 링크를 표시하지 않습니다.</p>';
+}
+
+async function loadDashboardNews() {
+  if (dashboardNewsLoaded) return;
+  dashboardNewsLoaded = true;
+  try {
+    const response = await fetch('data/dashboard-news.json', { cache: 'no-cache' });
+    if (!response.ok) throw new Error('news unavailable');
+    const payload = await response.json();
+    // 오래된 정책자료는 숨기되, 신청 기한이 남은 복지정책은 기한까지 유지한다.
+    const freshSince = new Date();
+    freshSince.setDate(freshSince.getDate() - 180);
+    const freshDate = freshSince.toISOString().slice(0, 10);
+    const items = (Array.isArray(payload.items) ? payload.items : [])
+      .filter((item) => (item?.date >= freshDate || item?.expiresOn >= getLocalDate()) && (!item.expiresOn || item.expiresOn >= getLocalDate()));
+    renderDashboardNews(items);
+    const note = document.querySelector('#dashboardNewsNote');
+    document.querySelector('#dashboardNews').hidden = false;
+    if (note && payload.updatedAt) note.textContent = `정책 1 · 건강 리포트 2 · 전문가 최신 글 2 · 최근 확인 ${payload.updatedAt.replaceAll('-', '.')} · 파일 내려받기·미확인 링크는 표시하지 않습니다.`;
+  } catch {
+    dashboardNewsLoaded = false;
+    renderDashboardNews([]);
+  }
 }
 
 function formatWeatherDate(value) {
@@ -1677,7 +1737,7 @@ function buildSeasonalAlerts(sales, saleItems, weather) {
   const settings = getSeasonalitySettings();
   const completedSales = sales.filter((sale) => sale.status === 'completed');
   const latestDate = completedSales.map((sale) => sale.sold_at.slice(0, 10)).sort().at(-1);
-  if (!latestDate) return { alerts: [], latestDate: '', settings, hasComparison: false };
+  if (!latestDate) return { alerts: [], watchlist: [], latestDate: '', settings, hasComparison: false };
 
   const salesById = new Map(completedSales.map((sale) => [sale.id, sale.sold_at.slice(0, 10)]));
   const categoryForProduct = new Map(products.map((product) => [product.id, product.product_categories?.name || '기타']));
@@ -1752,14 +1812,77 @@ function buildSeasonalAlerts(sales, saleItems, weather) {
 // ---------- 분석 화면: 이익·마진율 중심 수익성 분석 ----------
 const MIN_PRODUCT_REVENUE = 200000; // 상품 순위에 넣을 최소 매출(원). 판매가 너무 적은 상품은 마진율이 왜곡됨
 
+const ANALYTICS_SOURCES = { all: '전체 판매', registered: '판매 등록', legacy: '엑셀 과거 판매' };
+
+function analyticsSourceControls() {
+  const scopeNote = analyticsSource === 'registered'
+    ? '판매 관리에서 등록 완료한 판매만 조회합니다.'
+    : `${analyticsSource === 'legacy' ? '엑셀 과거 판매만 조회합니다.' : '판매 등록과 엑셀 과거 판매를 함께 조회합니다.'} 엑셀은 영수증 번호가 없어 품목 한 줄을 한 기록으로 셉니다.`;
+  return `<div class="analytics-source-controls"><label for="analyticsSource">자료 범위<select id="analyticsSource">${Object.entries(ANALYTICS_SOURCES).map(([value, label]) => `<option value="${value}" ${analyticsSource === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label><p class="analytics-scope-note">${scopeNote}</p></div><p class="analytics-refresh-message" id="analyticsRefreshMessage" role="status">${escapeText(analyticsRefreshError)}</p>`;
+}
+
+function bindAnalyticsSource() {
+  document.querySelector('#analyticsSource')?.addEventListener('change', event => {
+    analyticsSource = event.target.value;
+    applyAnalyticsSource();
+  });
+}
+
+function applyAnalyticsSource() {
+  const includeRegistered = analyticsSource !== 'legacy';
+  const includeLegacy = analyticsSource !== 'registered';
+  const registeredSales = includeRegistered ? analyticsRaw.sales.map(row => ({ ...row, id: `sale:${row.id}`, source: 'registered' })) : [];
+  const registeredIds = new Set(analyticsRaw.sales.map(row => row.id));
+  const registeredItems = includeRegistered ? analyticsRaw.items.filter(row => registeredIds.has(row.sale_id)).map(row => ({ ...row, sale_id: `sale:${row.sale_id}` })) : [];
+  const oldRows = includeLegacy ? analyticsRaw.legacy : [];
+  const productId = row => row.product_id == null ? `legacy-name:${row.product_name_raw}` : row.product_id;
+  analyticsSales = [...registeredSales, ...oldRows.map(row => ({ id: `legacy:${row.id}`, sold_at: row.sold_on, total_amount: Number(row.amount || 0), status: 'completed', source: 'legacy' }))];
+  analyticsSaleItems = [...registeredItems, ...oldRows.map(row => ({ sale_id: `legacy:${row.id}`, product_id: productId(row), quantity: Number(row.quantity || 0), amount: Number(row.amount || 0) }))];
+  analyticsProfit = [
+    ...(includeRegistered ? analyticsRaw.profit : []),
+    ...oldRows.map(row => {
+      const profit = legacySaleProfit(row);
+      return { sold_at: row.sold_on, product_id: productId(row), product_name_raw: row.product_name_raw, quantity: Number(row.quantity || 0), amount: Number(row.amount || 0), cost_amount: profit == null || row.amount == null ? null : Number(row.amount) - profit, source: 'legacy' };
+    }),
+  ];
+  renderAnalytics(analyticsSales, analyticsSaleItems);
+}
+
+async function refreshAnalyticsData() {
+  if (currentProfile?.role !== 'admin') return;
+  const version = ++analyticsRequestVersion;
+  try {
+    const [sales, items, profit, legacy] = await Promise.all([
+      apiAll('sales?select=id,sold_at,total_amount,status&status=eq.completed&order=id.asc'),
+      apiAll('sale_items?select=sale_id,product_id,quantity,amount&order=id.asc'),
+      apiAll('v_sale_items_profit?select=sold_at,product_id,quantity,amount,cost_amount&status=eq.completed&order=sale_item_id.asc'),
+      apiAll('sales_legacy?select=id,product_id,product_name_raw,sold_on,quantity,amount,unit_cost,profit&order=id.asc'),
+    ]);
+    if (version !== analyticsRequestVersion) return;
+    analyticsRaw = { sales, items, profit, legacy };
+    analyticsRefreshError = '';
+    applyAnalyticsSource();
+  } catch {
+    if (version !== analyticsRequestVersion) return;
+    analyticsRefreshError = '분석의 최신 자료를 불러오지 못했습니다. 저장 결과와는 별개이며, 현재 표시값은 이전 조회 기준일 수 있습니다. 새로고침해 확인해 주세요.';
+    const message = document.querySelector('#analyticsRefreshMessage');
+    if (message) message.textContent = analyticsRefreshError;
+    else { document.querySelector('#analytics .panel').innerHTML = analyticsSourceControls(); bindAnalyticsSource(); }
+    const dashboardMessage = document.querySelector('#dashboardAnalyticsRefreshMessage');
+    if (dashboardMessage) dashboardMessage.textContent = analyticsRefreshError;
+  }
+}
+
 function buildProfitAnalysis(sales, year, latestSaleDate, isLatestYear) {
   if (!analyticsProfit.length) return '<p class="seasonal-empty">이익 데이터를 불러오지 못했습니다. 원가 데이터를 확인해 주세요.</p>';
   const categoryOf = new Map(products.map((product) => [product.id, product.product_categories?.name || '기타']));
-  const nameOf = new Map(products.map((product) => [product.id, product.name]));
-  const rows = analyticsProfit.map((row) => ({
+  const nameOf = new Map([...products.map((product) => [product.id, product.name]), ...analyticsProfit.filter(row => row.product_name_raw).map(row => [row.product_id, row.product_name_raw])]);
+  const allRows = analyticsProfit.map((row) => ({
     date: row.sold_at.slice(0, 10), month: row.sold_at.slice(0, 7),
-    amount: Number(row.amount), cost: Number(row.cost_amount), productId: row.product_id
+    amount: Number(row.amount), cost: row.cost_amount == null ? null : Number(row.cost_amount), productId: row.product_id
   }));
+  const rows = allRows.filter(row => row.cost != null && Number.isFinite(row.cost));
+  if (!rows.length) return '<p class="notice" id="analyticsUnknownCost">원가·수익을 확인할 수 있는 기록이 없어 이익을 계산하지 않았습니다. 매입·원가 자료를 확인해 주세요.</p>';
   const previousYear = String(Number(year) - 1);
   const cutoff = isLatestYear ? latestSaleDate.slice(5, 10) : '12-31';
   const inYtd = (row, target) => row.date.startsWith(target) && row.date.slice(5, 10) <= cutoff;
@@ -1774,8 +1897,8 @@ function buildProfitAnalysis(sales, year, latestSaleDate, isLatestYear) {
   const beforeRows = rows.filter((row) => inYtd(row, previousYear));
   const now = totalOf(nowRows);
   const before = totalOf(beforeRows);
-  const ordersNow = sales.filter((sale) => sale.sold_at.startsWith(year) && sale.sold_at.slice(5, 10) <= cutoff).length;
-  const ordersBefore = sales.filter((sale) => sale.sold_at.startsWith(previousYear) && sale.sold_at.slice(5, 10) <= cutoff).length;
+  const ordersNow = analyticsSource === 'registered' ? sales.filter(sale => sale.sold_at.startsWith(year) && sale.sold_at.slice(5, 10) <= cutoff).length : rows.filter(row => inYtd(row, year)).length;
+  const ordersBefore = analyticsSource === 'registered' ? sales.filter(sale => sale.sold_at.startsWith(previousYear) && sale.sold_at.slice(5, 10) <= cutoff).length : rows.filter(row => inYtd(row, previousYear)).length;
   const cutoffText = `${Number(cutoff.slice(0, 2))}월 ${Number(cutoff.slice(3, 5))}일`;
 
   // 상단 지표 카드: good은 증가가 좋은 지표(true)인지, 나쁜 지표(false: 원가)인지
@@ -1788,10 +1911,10 @@ function buildProfitAnalysis(sales, year, latestSaleDate, isLatestYear) {
   const profitPerOrderNow = ordersNow ? now.profit / ordersNow : 0;
   const profitPerOrderBefore = ordersBefore ? before.profit / ordersBefore : 0;
   const cards = [
-    card('매출총이익', money(now.profit), percentText(percentChange(now.profit, before.profit)), percentChange(now.profit, before.profit), true, '💰', 'blue'),
+    card('매출총이익', nowRows.length ? money(now.profit) : '—', percentText(percentChange(now.profit, before.profit)), percentChange(now.profit, before.profit), true, '💰', 'blue'),
     card('마진율', now.margin === null ? '—' : `${now.margin.toFixed(1)}%`, marginDiff === null ? '비교 기록 없음' : `${marginDiff >= 0 ? '▲ +' : '▼ '}${marginDiff.toFixed(1)}%p`, marginDiff, true, '📈', 'green'),
-    card('원가 합계', money(now.cost), percentText(percentChange(now.cost, before.cost)), percentChange(now.cost, before.cost), false, '📦', 'amber'),
-    card('주문 1건당 이익', money(profitPerOrderNow), percentText(percentChange(profitPerOrderNow, profitPerOrderBefore)), percentChange(profitPerOrderNow, profitPerOrderBefore), true, '🧾', 'purple')
+    card('원가 합계', nowRows.length ? money(now.cost) : '—', percentText(percentChange(now.cost, before.cost)), percentChange(now.cost, before.cost), false, '📦', 'amber'),
+    card(analyticsSource === 'registered' ? '주문 1건당 이익' : '품목 기록 1건당 이익', ordersNow ? money(profitPerOrderNow) : '—', percentText(percentChange(profitPerOrderNow, profitPerOrderBefore)), percentChange(profitPerOrderNow, profitPerOrderBefore), true, '🧾', 'purple')
   ].join('');
 
   // 분류별 수익성
@@ -1846,13 +1969,15 @@ function buildProfitAnalysis(sales, year, latestSaleDate, isLatestYear) {
     const profit = value.amount - value.cost;
     return { month, profit, margin: value.amount > 0 ? (profit / value.amount) * 100 : 0 };
   });
-  const profitMax = Math.max(...monthData.map((item) => item.profit), 1);
+  const profitMax = Math.max(...monthData.map((item) => Math.abs(item.profit)), 1);
+  const hasLoss = monthData.some((item) => item.profit < 0);
+  const profitBaseline = hasLoss ? 110 : 190;
   const lowMarginValue = Math.min(...monthData.map((item) => item.margin)) - 2;
   const highMarginValue = Math.max(...monthData.map((item) => item.margin)) + 2;
   const slot = 600 / monthData.length;
   const bars = monthData.map((item, index) => {
-    const height = Math.max(0, (item.profit / profitMax) * 150);
-    return `<rect class="pbar ${item.month.startsWith(year) ? 'selected' : ''}" x="${(index * slot + slot * 0.2).toFixed(1)}" y="${(190 - height).toFixed(1)}" width="${(slot * 0.6).toFixed(1)}" height="${height.toFixed(1)}"><title>${item.month} · 이익 ${money(item.profit)} · 마진율 ${item.margin.toFixed(1)}%</title></rect>`;
+    const height = (Math.abs(item.profit) / profitMax) * (hasLoss ? 75 : 150);
+    return `<rect class="pbar ${item.month.startsWith(year) ? 'selected' : ''}" x="${(index * slot + slot * 0.2).toFixed(1)}" y="${(item.profit < 0 ? profitBaseline : profitBaseline - height).toFixed(1)}" width="${(slot * 0.6).toFixed(1)}" height="${height.toFixed(1)}"><title>${item.month} · 이익 ${money(item.profit)} · 마진율 ${item.margin.toFixed(1)}%</title></rect>`;
   }).join('');
   const linePath = monthData.map((item, index) => {
     const y = 30 + (1 - (item.margin - lowMarginValue) / (highMarginValue - lowMarginValue)) * 130;
@@ -1872,13 +1997,15 @@ function buildProfitAnalysis(sales, year, latestSaleDate, isLatestYear) {
 
   return `
     <p class="kpi-period">기준 기간: ${year}년 1월 1일 ~ ${cutoffText} · ${previousYear}년 같은 기간과 비교 (이익 = 매출 − 매입 원가)</p>
+    ${allRows.filter(row => inYtd(row, year) && row.cost == null).length ? `<p class="notice" id="analyticsUnknownCost">원가·수익을 확인할 수 없는 ${allRows.filter(row => inYtd(row, year) && row.cost == null).length.toLocaleString('ko-KR')}개 품목 기록은 아래 이익·원가·마진율 집계에서 제외했습니다. 매출 합계에는 포함됩니다.</p>` : ''}
+    ${nowRows.some((row) => row.amount > 0 && row.cost <= 0) ? '<p class="notice">원가가 0원으로 기록된 판매가 포함되어 있습니다. 수익과 마진율을 판단하기 전에 매입·원가 기록을 확인해 주세요.</p>' : ''}
     <div class="analysis-kpis">${cards}</div>
     ${insights.length ? `<section class="profit-insights"><h3>한눈에 보기</h3><ul>${insights.map((text) => `<li>${escapeText(text)}</li>`).join('')}</ul></section>` : ''}
     <section class="profit-card">
       <div class="chart-title"><div><p class="eyebrow">PROFIT TREND</p><h3>월별 이익과 마진율 추이</h3></div><strong>마진율 ${Math.min(...monthData.map((item) => item.margin)).toFixed(1)}% ~ ${Math.max(...monthData.map((item) => item.margin)).toFixed(1)}%</strong></div>
       <div class="year-legend"><span><i class="legend-bar"></i>월 매출총이익 (진한 막대: ${year}년)</span><span><i class="legend-line"></i>마진율</span></div>
-      <svg class="profit-chart" viewBox="0 0 600 220" preserveAspectRatio="none" role="img" aria-label="월별 이익과 마진율 추이"><line x1="0" y1="190" x2="600" y2="190"/><line x1="0" y1="120" x2="600" y2="120" class="guide"/><line x1="0" y1="50" x2="600" y2="50" class="guide"/>${bars}<path d="${linePath}"/></svg>
-      <div class="profit-labels" style="grid-template-columns:repeat(${monthData.length},1fr)">${monthLabels}</div>
+      <div class="profit-trend-scroll" style="--profit-months:${monthData.length}"><svg class="profit-chart" viewBox="0 0 600 220" preserveAspectRatio="none" role="img" aria-label="월별 이익과 마진율 추이"><line x1="0" y1="${profitBaseline}" x2="600" y2="${profitBaseline}"/><line x1="0" y1="120" x2="600" y2="120" class="guide"/><line x1="0" y1="50" x2="600" y2="50" class="guide"/>${bars}<path d="${linePath}"/></svg>
+      <div class="profit-labels" style="grid-template-columns:repeat(${monthData.length},1fr)">${monthLabels}</div></div>
       <p class="profit-note">막대 위에 마우스를 올리면 월별 수치가 나옵니다. 마지막 달은 진행 중이라 이익이 작게 보일 수 있습니다.</p>
     </section>
     <section class="profit-card">
@@ -1895,7 +2022,12 @@ function buildProfitAnalysis(sales, year, latestSaleDate, isLatestYear) {
 function renderAnalytics(sales, saleItems) {
   const view = document.querySelector('#analytics .panel');
   const years = [...new Set(sales.map((sale) => sale.sold_at.slice(0, 4)))].sort().reverse();
-  if (!years.length) return;
+  if (!years.length) {
+    view.innerHTML = `${analyticsSourceControls()}<p class="empty-message">선택한 자료 범위에 판매 기록이 없습니다.</p>`;
+    document.querySelector('#dashboardCharts').replaceChildren();
+    document.querySelector('#dashboardInsights').hidden = true;
+    bindAnalyticsSource(); return;
+  }
   if (!years.includes(selectedAnalyticsYear)) selectedAnalyticsYear = years[0];
   const selectedSales = sales.filter((sale) => sale.sold_at.startsWith(selectedAnalyticsYear));
   const selectedSaleIds = new Set(selectedSales.map((sale) => sale.id));
@@ -1999,6 +2131,9 @@ function renderAnalytics(sales, saleItems) {
   const weatherOutlook = buildWeatherOutlook(sales, saleItems, analyticsWeather, analyticsForecast, analyticsForecastError);
   view.innerHTML = `
     <div class="analysis-heading"><div><p class="eyebrow">BUSINESS INTELLIGENCE</p><h2>수익성 분석</h2><p>이익과 마진율을 중심으로 시간 흐름과 분류·상품별 수익 구조를 살펴봅니다.</p></div><label class="analysis-year-label" for="analyticsYear">조회 연도<select id="analyticsYear">${years.map((year) => `<option value="${year}" ${year === selectedAnalyticsYear ? 'selected' : ''}>${year}년</option>`).join('')}</select></label></div>
+    ${analyticsSourceControls()}
+    <p class="analytics-scope-note" id="analyticsRevenueSummary">${selectedAnalyticsYear}년 매출 합계 ${won(revenue)} · ${analyticsSource === 'registered' ? '등록 판매' : '판매·엑셀 기록'} ${selectedSales.length.toLocaleString('ko-KR')}건 · 판매 수량 ${countText(units)}개</p>
+    ${analyticsSource !== 'registered' && analyticsRaw.legacy.some(row => row.sold_on.startsWith(selectedAnalyticsYear) && row.amount == null) ? '<p class="notice">매출액이 없는 엑셀 기록은 매출·이익 합계에서 제외했습니다.</p>' : ''}
     ${buildProfitAnalysis(sales, selectedAnalyticsYear, latestSaleDate, selectedAnalyticsYear === years[0])}
     <div class="analysis-grid">
       <section class="trend-card"><div class="chart-title"><div><p class="eyebrow">MONTH TREND</p><h3>연도별 월 매출 비교</h3></div><strong>전체 최고 ${Math.round(max).toLocaleString('ko-KR')}원</strong></div><div class="year-legend">${yearSeries.map((series, index) => `<span><i style="background:${lineColors[index % lineColors.length]}"></i>${series.year}년</span>`).join('')}</div><svg viewBox="0 0 600 200" preserveAspectRatio="none" role="img" aria-label="연도별 월 매출 비교"><line x1="0" y1="170" x2="600" y2="170"/><line x1="0" y1="105" x2="600" y2="105"/><line x1="0" y1="40" x2="600" y2="40"/>${monthFocus}${graphLines}</svg><div class="chart-labels">${labels}</div><div class="chart-events" aria-label="기간 중 주요 일정"><strong>기간 일정</strong>${calendarEvents.length ? calendarEvents.map((event) => `<span><b>${event.start}${event.end !== event.start ? ` ~ ${event.end}` : ''}</b>${event.label} · ${event.note}</span>`).join('') : '<span>표시할 명절·공휴일 일정이 없습니다.</span>'}</div></section>
@@ -2014,9 +2149,13 @@ function renderAnalytics(sales, saleItems) {
   const dashboardInsights = document.querySelector('#dashboardInsights');
   const analysisGrid = view.querySelector('.analysis-grid');
   if (dashboardCharts && dashboardInsights && analysisGrid) {
-    dashboardCharts.replaceChildren(analysisGrid);
+    const scope = document.createElement('p'); scope.className = 'analytics-scope-note'; scope.id = 'dashboardAnalyticsScope';
+    scope.textContent = `자료 범위: ${ANALYTICS_SOURCES[analyticsSource]} · 분류 비교 연도: ${selectedAnalyticsYear}년 · 자료 범위와 연도는 분석 화면에서 바꿀 수 있습니다.`;
+    const refreshMessage = document.createElement('p'); refreshMessage.className = 'analytics-refresh-message'; refreshMessage.id = 'dashboardAnalyticsRefreshMessage'; refreshMessage.setAttribute('role', 'status'); refreshMessage.textContent = analyticsRefreshError;
+    dashboardCharts.replaceChildren(scope, refreshMessage, analysisGrid);
     dashboardInsights.hidden = false;
   }
+  bindAnalyticsSource();
   document.querySelectorAll('.month-pick').forEach((button) => button.addEventListener('click', () => {
     const month = Number(button.dataset.month);
     selectedAnalyticsMonth = activeMonth === month ? 0 : month;
@@ -2052,44 +2191,56 @@ const won = (value) => `${Math.round(value).toLocaleString('ko-KR')}원`;
 const countText = (value) => Number(value.toFixed(3)).toLocaleString('ko-KR');
 const escapeText = (value) => String(value).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
 
-// 판매가 있는 월 목록을 만들고 최근 월을 선택
-async function prepareSalesHistory() {
+// 신규 판매와 엑셀 과거 자료의 조회 가능한 월을 함께 표시합니다. 기존 읽기 권한을 따릅니다.
+let salesHistoryRequestVersion = 0;
+async function prepareSalesHistory(preferredMonth = '') {
   try {
-    const latest = await (await api('sales?select=sold_at&status=eq.completed&order=sold_at.desc&limit=1')).json();
-    const oldest = await (await api('sales?select=sold_at&status=eq.completed&order=sold_at.asc&limit=1')).json();
-    if (!latest.length) { salesHistoryMessage.textContent = '등록된 판매 내역이 없습니다.'; return; }
-    const months = [];
-    let [year, month] = latest[0].sold_at.slice(0, 7).split('-').map(Number);
-    const first = oldest[0].sold_at.slice(0, 7);
-    while (`${year}-${String(month).padStart(2, '0')}` >= first) {
-      months.push(`${year}-${String(month).padStart(2, '0')}`);
-      month -= 1;
-      if (month === 0) { month = 12; year -= 1; }
+    const [salesDates, importedDates] = await Promise.all([
+      apiAll('sales?select=sold_at&status=eq.completed&order=sold_at.asc'),
+      apiAll('sales_legacy?select=sold_on&order=sold_on.asc'),
+    ]);
+    const months = [...new Set([
+      ...salesDates.map((row) => row.sold_at.slice(0, 7)),
+      ...importedDates.map((row) => row.sold_on.slice(0, 7)),
+    ])].sort().reverse();
+    if (!months.length) {
+      salesHistoryMonth.replaceChildren(); salesHistoryMonth.disabled = true;
+      salesHistoryRows = []; salesHistoryBody.replaceChildren(); salesHistorySummary.hidden = true;
+      salesHistoryMessage.textContent = '등록된 판매 내역이 없습니다.';
+      return;
     }
-    salesHistoryMonth.replaceChildren(...months.map((value) => new Option(`${value.slice(0, 4)}년 ${Number(value.slice(5, 7))}월`, value)));
+    const previous = preferredMonth || salesHistoryMonth.value;
+    const selected = months.includes(previous) ? previous : months[0];
+    salesHistoryMonth.replaceChildren(...months.map((value) => new Option(`${value.slice(0, 4)}년 ${Number(value.slice(5, 7))}월`, value, false, value === selected)));
     salesHistoryMonth.disabled = false;
     await loadSalesHistory();
-  } catch (error) {
-    salesHistoryMessage.textContent = '판매 내역을 불러오지 못했습니다.';
+  } catch {
+    salesHistoryMessage.textContent = '판매 내역을 불러오지 못했습니다. 연결 상태를 확인한 뒤 새로고침해 주세요.';
   }
 }
 
 async function loadSalesHistory() {
   const month = salesHistoryMonth.value;
   if (!month) return;
-  const nextMonth = addDays(`${month}-01`, 32).slice(0, 7);
+  const version = ++salesHistoryRequestVersion;
+  const nextMonth = shiftMonth(month, 1);
+  salesHistoryRows = []; salesHistoryBody.replaceChildren(); salesHistorySummary.hidden = true;
+  salesHistoryMessage.textContent = '판매 내역을 불러오고 있습니다.';
   try {
-    const rows = await apiAll(`sale_items?select=product_id,quantity,amount,sales!inner(id,sold_at,status)&sales.status=eq.completed&sales.sold_at=gte.${month}-01&sales.sold_at=lt.${nextMonth}-01&order=id.asc`);
-    salesHistoryRows = rows.map((row) => ({
-      saleId: row.sales.id, date: row.sales.sold_at.slice(0, 10), productId: row.product_id,
-      quantity: Number(row.quantity), amount: Number(row.amount)
-    }));
+    const [rows, imported] = await Promise.all([
+      apiAll(`sale_items?select=product_id,quantity,amount,sales!inner(id,sold_at,status)&sales.status=eq.completed&sales.sold_at=gte.${month}-01&sales.sold_at=lt.${nextMonth}-01&order=id.asc`),
+      apiAll(`sales_legacy?select=id,sold_on,product_id,product_name_raw,quantity,amount&sold_on=gte.${month}-01&sold_on=lt.${nextMonth}-01&order=id.asc`),
+    ]);
+    if (version !== salesHistoryRequestVersion) return;
+    salesHistoryRows = [
+      ...rows.map((row) => ({ saleId: `sale:${row.sales.id}`, date: row.sales.sold_at.slice(0, 10), productId: row.product_id, productName: '', quantity: Number(row.quantity), amount: Number(row.amount), imported: false })),
+      ...imported.map((row) => ({ saleId: `legacy:${row.id}`, date: row.sold_on, productId: row.product_id, productName: row.product_name_raw, quantity: Number(row.quantity || 0), amount: Number(row.amount || 0), imported: true })),
+    ];
     renderSalesHistory();
-  } catch (error) {
-    salesHistoryRows = [];
-    salesHistoryBody.replaceChildren();
-    salesHistorySummary.hidden = true;
-    salesHistoryMessage.textContent = '판매 내역을 불러오지 못했습니다.';
+  } catch {
+    if (version !== salesHistoryRequestVersion) return;
+    salesHistoryRows = []; salesHistoryBody.replaceChildren(); salesHistorySummary.hidden = true;
+    salesHistoryMessage.textContent = '판매 내역을 불러오지 못했습니다. 연결 상태를 확인한 뒤 다시 조회해 주세요.';
   }
 }
 
@@ -2105,12 +2256,15 @@ function renderSalesHistory() {
   const totalAmount = rows.reduce((sum, row) => sum + row.amount, 0);
   const totalQuantity = rows.reduce((sum, row) => sum + row.quantity, 0);
   const saleCount = new Set(rows.map((row) => row.saleId)).size;
+  const importedCount = rows.filter((row) => row.imported).length;
   const dayCount = new Set(rows.map((row) => row.date)).size;
-  salesHistorySummary.textContent = `${salesHistoryMonth.value} · 판매 ${saleCount.toLocaleString('ko-KR')}건 · 수량 ${countText(totalQuantity)}개 · 매출액 ${won(totalAmount)} · 영업일 평균 ${won(totalAmount / dayCount)}`;
+  salesHistorySummary.textContent = `${salesHistoryMonth.value} · 기록 ${saleCount.toLocaleString('ko-KR')}건${importedCount ? ` (엑셀 ${importedCount.toLocaleString('ko-KR')}줄 포함)` : ''} · 수량 ${countText(totalQuantity)}개 · 매출액 ${won(totalAmount)} · 영업일 평균 ${won(totalAmount / dayCount)}`;
   salesHistorySummary.hidden = false;
   salesHistoryMessage.textContent = salesHistoryView === 'daily'
     ? '날짜를 누르면 그날 판매한 품목을 볼 수 있습니다.'
     : '매출액이 큰 품목 순서입니다. 비중은 이 달 전체 매출액 대비입니다.';
+  if (importedCount) salesHistoryMessage.textContent += ' 엑셀 자료는 영수증 번호가 없어 품목 한 줄을 한 기록으로 표시합니다.';
+  const productKey = (row) => row.productId != null ? `product:${row.productId}` : `name:${row.productName}`;
 
   if (salesHistoryView === 'daily') {
     const byDate = new Map();
@@ -2119,19 +2273,20 @@ function renderSalesHistory() {
       day.sales.add(row.saleId);
       day.quantity += row.quantity;
       day.amount += row.amount;
-      const item = day.items.get(row.productId) || { quantity: 0, amount: 0 };
+      const key = productKey(row);
+      const item = day.items.get(key) || { productId: row.productId, productName: row.productName, quantity: 0, amount: 0 };
       item.quantity += row.quantity;
       item.amount += row.amount;
-      day.items.set(row.productId, item);
+      day.items.set(key, item);
       byDate.set(row.date, day);
     });
     const dates = [...byDate.keys()].sort().reverse();
-    salesHistoryBody.innerHTML = `<div class="table-wrap"><div class="history-head"><span>일자</span><span>건수</span><span>판매수량</span><span>매출액</span></div>
+    salesHistoryBody.innerHTML = `<div class="table-wrap"><div class="history-head"><span>일자</span><span>기록 수</span><span>판매수량</span><span>매출액</span></div>
       ${dates.map((date, index) => {
         const day = byDate.get(date);
-        const itemRows = [...day.items.entries()].sort((a, b) => b[1].amount - a[1].amount).map(([productId, item]) => {
-          const product = productById.get(productId);
-          return `<tr><td>${escapeText(product?.name || '알 수 없는 상품')}</td><td></td><td>${countText(item.quantity)}</td><td>${won(item.amount)}</td></tr>`;
+        const itemRows = [...day.items.values()].sort((a, b) => b.amount - a.amount).map((item) => {
+          const product = productById.get(item.productId);
+          return `<tr><td>${escapeText(product?.name || item.productName || '알 수 없는 상품')}</td><td></td><td>${countText(item.quantity)}</td><td>${won(item.amount)}</td></tr>`;
         }).join('');
         return `<details class="history-day" ${index === 0 ? 'open' : ''}><summary><span>${date}</span><span>${day.sales.size}건</span><span>${countText(day.quantity)}개</span><strong>${won(day.amount)}</strong></summary><table class="history-table history-items"><colgroup><col style="width:34.1%"><col style="width:14.6%"><col style="width:22%"><col style="width:29.3%"></colgroup><tbody>${itemRows}</tbody></table></details>`;
       }).join('')}
@@ -2139,16 +2294,17 @@ function renderSalesHistory() {
   } else {
     const byProduct = new Map();
     rows.forEach((row) => {
-      const item = byProduct.get(row.productId) || { quantity: 0, amount: 0 };
+      const key = productKey(row);
+      const item = byProduct.get(key) || { productId: row.productId, productName: row.productName, quantity: 0, amount: 0 };
       item.quantity += row.quantity;
       item.amount += row.amount;
-      byProduct.set(row.productId, item);
+      byProduct.set(key, item);
     });
     const list = [...byProduct.entries()].sort((a, b) => b[1].amount - a[1].amount);
     salesHistoryBody.innerHTML = `<div class="table-wrap"><table class="history-table"><thead><tr><th>상품명</th><th>분류</th><th>판매수량</th><th>매출액</th><th>비중</th></tr></thead><tbody>
-      ${list.map(([productId, item]) => {
-        const product = productById.get(productId);
-        return `<tr><td>${escapeText(product?.name || '알 수 없는 상품')}</td><td>${escapeText(product?.product_categories?.name || '기타')}</td><td>${countText(item.quantity)}</td><td>${won(item.amount)}</td><td>${(item.amount / totalAmount * 100).toFixed(1)}%</td></tr>`;
+      ${list.map(([, item]) => {
+        const product = productById.get(item.productId);
+        return `<tr><td>${escapeText(product?.name || item.productName || '알 수 없는 상품')}</td><td>${escapeText(product?.product_categories?.name || '기타')}</td><td>${countText(item.quantity)}</td><td>${won(item.amount)}</td><td>${totalAmount ? (item.amount / totalAmount * 100).toFixed(1) + '%' : '—'}</td></tr>`;
       }).join('')}
       <tr class="history-sum"><td>월 합계</td><td></td><td>${countText(totalQuantity)}</td><td>${won(totalAmount)}</td><td>100%</td></tr></tbody></table></div>`;
   }
@@ -2276,6 +2432,8 @@ function downloadCsv(filename, headers, rows) {
 }
 
 async function runBackup(button, build) {
+  const includesPersonalInfo = button.id === 'backupOwnersPets' || button.id === 'backupVisits';
+  if (includesPersonalInfo && !window.confirm('개인정보가 포함된 CSV 파일을 내려받습니다. 업무용 안전한 기기에서만 보관하세요. 계속할까요?')) return;
   const message = document.querySelector('#backupMessage');
   button.disabled = true;
   message.textContent = '내려받을 파일을 만드는 중...';
@@ -2428,6 +2586,7 @@ function renderDashboardTrendChart(points) {
 
 async function loadDashboard() {
   renderTodaySchedule();
+  loadDashboardNews();
   loadDashboardTrend();
   let sales;
   try {
@@ -2435,28 +2594,21 @@ async function loadDashboard() {
   } catch (error) {
     return;
   }
-  if (!sales.length) {
-    setDashboardValue(0, '0원', '등록된 판매가 없습니다');
-    setDashboardValue(1, '0건', '등록된 판매가 없습니다');
-    setDashboardValue(2, '0원', '등록된 판매가 없습니다');
-    setDashboardValue(3, '—', '판매 데이터 연결 후 표시');
-    return;
-  }
-  const latestDay = sales.map((sale) => sale.sold_at.slice(0, 10)).sort().at(-1);
+  const latestDay = getLocalDate();
   const latestMonth = latestDay?.slice(0, 7);
   const todaySales = sales.filter((sale) => sale.sold_at.slice(0, 10) === latestDay);
   const monthSales = sales.filter((sale) => sale.sold_at.startsWith(latestMonth));
   const todayTotal = todaySales.reduce((sum, sale) => sum + Number(sale.total_amount), 0);
   const monthTotal = monthSales.reduce((sum, sale) => sum + Number(sale.total_amount), 0);
-  setDashboardValue(0, `${todayTotal.toLocaleString('ko-KR')}원`, `${latestDay} 최신 영업일 기준`);
-  setDashboardValue(1, `${todaySales.length}건`, `${latestDay} 최신 영업일 기준`);
+  setDashboardValue(0, `${todayTotal.toLocaleString('ko-KR')}원`, `${latestDay} 오늘 기준`);
+  setDashboardValue(1, `${todaySales.length}건`, `${latestDay} 오늘 기준`);
   if (currentProfile?.role !== 'admin' || !latestMonth) {
     setDashboardValue(2, '—', '관리자 전용 지표');
     setDashboardValue(3, '—', '관리자 전용 지표');
     return;
   }
   await showProfitCard(latestMonth);
-  // 마진율 = (매출 - 원가) / 매출. 최근 판매월과 그 전달을 함께 계산해 증감을 보여줌
+  // 마진율 = (매출 - 원가) / 매출. 현재 월과 그 전달을 함께 계산해 증감을 보여줌
   const marginOfMonth = async (month, revenue) => {
     const [year, monthNumber] = month.split('-').map(Number);
     const nextMonth = `${year + (monthNumber === 12 ? 1 : 0)}-${String(monthNumber === 12 ? 1 : monthNumber + 1).padStart(2, '0')}-01`;
@@ -2486,7 +2638,8 @@ async function showProfitCard(latestMonth) {
     const nextMonth = `${year + (monthNumber === 12 ? 1 : 0)}-${String(monthNumber === 12 ? 1 : monthNumber + 1).padStart(2, '0')}-01`;
     const rows = await apiAll(`v_sale_items_profit?select=amount,cost_amount&status=eq.completed&sold_at=gte.${latestMonth}-01&sold_at=lt.${nextMonth}`);
     const profit = rows.reduce((sum, item) => sum + (Number(item.amount) - Number(item.cost_amount)), 0);
-    setDashboardValue(2, `${profit.toLocaleString('ko-KR')}원`, `${latestMonth} 매출총이익(매출-매입원가)`);
+    const costWarning = rows.some((row) => Number(row.amount) > 0 && Number(row.cost_amount) <= 0) ? ' · 원가 0원 품목 포함 · 매입 기록 확인 필요' : '';
+    setDashboardValue(2, `${profit.toLocaleString('ko-KR')}원`, `${latestMonth} 매출총이익(매출-매입원가)${costWarning}`);
   } catch (error) {
     setDashboardValue(2, '—', '원가 데이터 확인 필요');
   }
@@ -2511,7 +2664,7 @@ function renderSale() {
   const total = saleItems.reduce((sum, item) => sum + item.sale_price * item.quantity, 0);
   rows.replaceChildren(...saleItems.map((item, index) => {
     const row = document.createElement('tr');
-    [item.name, item.quantity, `${(item.sale_price * item.quantity).toLocaleString('ko-KR')}원`, item.petLabel || '—'].forEach((value) => {
+    [item.name, countText(item.quantity), `${(item.sale_price * item.quantity).toLocaleString('ko-KR')}원`, item.petLabel || '—'].forEach((value) => {
       const cell = document.createElement('td'); cell.textContent = value; row.append(cell);
     });
     const removeCell = document.createElement('td');
@@ -2607,8 +2760,10 @@ function renderPetAllList(pets) {
 
 // 이름을 다 말하지 않아도(외자·초성만 입력해도) 찾을 수 있도록, 상품 검색과 같은 방식으로 전체 목록을 직접 매칭한다.
 async function searchPets(name) {
-  const query = name.trim();
+  petDetailRequestVersion += 1;
+  selectedPetId = null;
   petDetailPanel.hidden = true;
+  const query = name.trim();
   if (!query) { petSearchMessage.textContent = '이름을 입력하거나 말해 주세요.'; return; }
   petSearchMessage.textContent = '검색 중...';
   try {
@@ -2632,8 +2787,10 @@ function renderPetCandidates(results) {
 }
 
 async function showPetDetail(petId) {
+  const requestVersion = ++petDetailRequestVersion;
   selectedPetId = petId;
   petSearchMessage.textContent = '불러오는 중...';
+  petDetailPanel.hidden = true;
   // 상세 화면이 바로 보이도록, 상세보기를 누른 목록(검색 결과·전체보기)은 접어둔다.
   petCandidatesWrap.hidden = true;
   petAllListWrap.hidden = true;
@@ -2648,10 +2805,27 @@ async function showPetDetail(petId) {
     const [detail] = await detailResponse.json();
     if (!detail) throw new Error('상세 정보를 찾지 못했습니다.');
     const purchases = purchaseResponse.ok ? await purchaseResponse.json() : [];
+    const visits = visitResponse.ok ? await visitResponse.json() : [];
+    if (requestVersion !== petDetailRequestVersion) return;
     purchases.sort((a, b) => (b.sales?.sold_at || '').localeCompare(a.sales?.sold_at || ''));
-    renderPetDetail(detail, visitResponse.ok ? await visitResponse.json() : [], purchases);
-    petSearchMessage.textContent = '';
+    renderPetDetail(detail, visits, purchases);
+    const unavailable = [];
+    if (!purchaseResponse.ok) {
+      petPurchaseEmpty.textContent = '구매 이력을 불러오지 못했습니다. 반려동물을 다시 선택해 확인해 주세요.';
+      petPurchaseEmpty.hidden = false;
+      unavailable.push('구매 이력');
+    }
+    if (!visitResponse.ok) {
+      document.querySelector('#petTimelineEmpty').textContent = '진료 기록을 불러오지 못했습니다. 반려동물을 다시 선택해 확인해 주세요.';
+      document.querySelector('#petTimelineEmpty').hidden = false;
+      unavailable.push('방문 기록');
+    }
+    petSearchMessage.textContent = unavailable.length
+      ? `${unavailable.join('·')}을 불러오지 못했습니다. 기록이 없는 것은 아니니 다시 조회해 주세요.`
+      : '';
   } catch (error) {
+    if (requestVersion !== petDetailRequestVersion) return;
+    selectedPetId = null;
     petSearchMessage.textContent = error.message;
   }
 }
@@ -2745,11 +2919,13 @@ function renderPetDetail(detail, visits, purchases = []) {
     div.append(labelSpan, valueTag);
     return div;
   }));
+  petTimelineEmpty.textContent = '진료 기록이 없습니다.';
   renderPetTimeline(visits, detail.notes);
   petVisitDate.value = getLocalDate();
   petVisitRecord.value = '';
   petVisitDetail.value = '';
   petVisitFormMessage.textContent = '';
+  petPurchaseEmpty.textContent = '구매 이력이 없습니다. (과거 판매 데이터는 반려동물과 연결돼 있지 않습니다)';
 
   if (!purchases.length) {
     petPurchaseRows.replaceChildren();
@@ -2778,6 +2954,7 @@ function closePurchaseSuggestions() {
 }
 
 async function selectPurchaseProduct(product) {
+  if (purchaseProductValue.value !== product.code) purchaseUnitCost.value = '';
   purchaseProductValue.value = product.code;
   purchaseProductSearch.value = product.name;
   purchaseProductHint.textContent = product.track_stock
@@ -2790,7 +2967,7 @@ async function selectPurchaseProduct(product) {
   if (!purchaseUnitCost.value) {
     try {
       const rows = await apiAll(`purchase_items?select=unit_cost,purchased_at&product_id=eq.${product.id}&order=purchased_at.desc&limit=1`);
-      if (rows[0] && !purchaseUnitCost.value) purchaseUnitCost.value = rows[0].unit_cost;
+      if (purchaseProductValue.value === product.code && rows[0] && !purchaseUnitCost.value) purchaseUnitCost.value = rows[0].unit_cost;
     } catch { /* 이전 단가 조회 실패는 무시하고 직접 입력하게 둠 */ }
   }
 }
@@ -2831,7 +3008,7 @@ function renderPurchaseSuggestions(keyword = '') {
 function movePurchaseSuggestion(step) {
   const options = [...purchaseProductSuggestions.querySelectorAll('.product-suggestion')];
   if (!options.length) return;
-  activePurchaseSuggestionIndex = (activePurchaseSuggestionIndex + step + options.length) % options.length;
+  activePurchaseSuggestionIndex = activePurchaseSuggestionIndex < 0 ? (step > 0 ? 0 : options.length - 1) : (activePurchaseSuggestionIndex + step + options.length) % options.length;
   options.forEach((option, index) => option.classList.toggle('active', index === activePurchaseSuggestionIndex));
   const activeOption = options[activePurchaseSuggestionIndex];
   purchaseProductSearch.setAttribute('aria-activedescendant', activeOption.id);
@@ -2847,7 +3024,7 @@ function renderPurchase() {
   const total = purchaseItems.reduce((sum, item) => sum + item.quantity * item.unitCost, 0);
   rows.replaceChildren(...purchaseItems.map((item, index) => {
     const row = document.createElement('tr');
-    [item.name, item.quantity, `${item.unitCost.toLocaleString('ko-KR')}원`, `${Math.round(item.quantity * item.unitCost).toLocaleString('ko-KR')}원`].forEach((value) => {
+    [item.name, countText(item.quantity), `${item.unitCost.toLocaleString('ko-KR')}원`, `${Math.round(item.quantity * item.unitCost).toLocaleString('ko-KR')}원`].forEach((value) => {
       const cell = document.createElement('td'); cell.textContent = value; row.append(cell);
     });
     const removeCell = document.createElement('td');
@@ -2931,8 +3108,25 @@ async function loadTasks() {
   renderCalendar();
 }
 
+function taskChoiceLabel(task) {
+  const status = { todo: '할 일', doing: '진행 중', done: '완료', hold: '보류' }[task.status] || '';
+  return `${task.scheduled_time ? task.scheduled_time.slice(0, 5) + ' · ' : ''}${task.title} · ${status}`;
+}
+
 function renderCalendar() {
   const grid = document.querySelector('#taskCalendar');
+  let dayList = document.querySelector('#taskDayList');
+  if (!dayList) {
+    dayList = document.createElement('section');
+    dayList.id = 'taskDayList';
+    dayList.className = 'task-day-list';
+    dayList.hidden = true;
+    document.querySelector('#taskDetailTitle').before(dayList);
+  }
+  dayList.querySelectorAll('button').forEach((button) => {
+    const task = tasks.find((item) => String(item.id) === button.dataset.taskId);
+    if (task) button.textContent = taskChoiceLabel(task);
+  });
   const year = calendarDate.getFullYear(); const month = calendarDate.getMonth();
   document.querySelector('#calendarTitle').textContent = `${year}.${String(month + 1).padStart(2, '0')}`;
   grid.replaceChildren();
@@ -2940,18 +3134,77 @@ function renderCalendar() {
   const days = new Date(year, month + 1, 0).getDate();
   for (let index = 0; index < first + days; index += 1) {
     const day = document.createElement('button'); day.type = 'button'; day.className = 'task-day';
-    if (index < first) { day.classList.add('muted'); grid.append(day); continue; }
+    if (index < first) { day.classList.add('muted'); day.disabled = true; day.setAttribute('aria-hidden', 'true'); grid.append(day); continue; }
     const date = `${year}-${String(month + 1).padStart(2, '0')}-${String(index - first + 1).padStart(2, '0')}`;
     const dayTasks = tasks.filter((task) => task.due_date === date);
+    day.setAttribute('aria-label', `${date} · 업무 ${dayTasks.length}건`);
+    day.title = dayTasks.map((task) => task.title).join('\n');
     day.innerHTML = `<time>${index - first + 1}</time>`;
     dayTasks.slice(0, 2).forEach((task) => { const chip = document.createElement('span'); chip.className = `task-chip ${task.status}`; const bubble = makeCommentBubble(task.id); if (bubble) chip.append(bubble); chip.append(task.scheduled_time ? `${task.scheduled_time.slice(0, 5)} ${task.title}` : task.title); day.append(chip); });
-    day.addEventListener('click', () => { if (dayTasks[0]) showTask(dayTasks[0]); });
+    if (dayTasks.length > 2) {
+      const more = document.createElement('span');
+      more.className = 'task-more';
+      more.textContent = `+${dayTasks.length - 2}건`;
+      day.append(more);
+    }
+    day.addEventListener('click', () => {
+      dayList.hidden = false;
+      const heading = document.createElement('h3');
+      heading.textContent = `${date} · 업무 ${dayTasks.length}건`;
+      dayList.replaceChildren(heading);
+      if (!dayTasks.length) {
+        const empty = document.createElement('p');
+        empty.textContent = '등록된 업무가 없습니다.';
+        dayList.append(empty);
+        if (selectedTask) taskCommentDrafts.set(selectedTask.id, document.querySelector('#commentBody').value);
+        selectedTask = null; taskDetailVersion += 1;
+        document.querySelector('#taskDetailTitle').textContent = '업무를 선택하세요';
+        document.querySelector('#taskDetailMeta').textContent = `${date}에는 등록된 업무가 없습니다.`;
+        document.querySelector('#taskStatusControls').hidden = true;
+        document.querySelector('#commentForm').hidden = true;
+        document.querySelector('#commentList').replaceChildren();
+        document.querySelector('#commentBody').value = '';
+        setTaskActionMessage('');
+      }
+      dayTasks.forEach((task) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.dataset.taskId = task.id;
+        button.textContent = taskChoiceLabel(task);
+        button.addEventListener('click', () => showTask(task));
+        dayList.append(button);
+      });
+      if (dayTasks[0]) showTask(dayTasks[0]);
+      if (matchMedia('(max-width: 860px)').matches) dayList.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    });
     grid.append(day);
   }
 }
 
+let taskDetailVersion = 0;
+const taskCommentDrafts = new Map();
+
+function setTaskActionMessage(text) {
+  let message = document.querySelector('#taskActionMessage');
+  if (!message) {
+    message = document.createElement('p'); message.id = 'taskActionMessage'; message.className = 'form-message';
+    message.setAttribute('role', 'status');
+    document.querySelector('#taskStatusControls').after(message);
+  }
+  message.textContent = text;
+}
+
 async function showTask(task) {
+  const requestVersion = ++taskDetailVersion;
+  const input = document.querySelector('#commentBody');
+  if (selectedTask && selectedTask.id !== task.id) {
+    taskCommentDrafts.set(selectedTask.id, input.value);
+    input.value = taskCommentDrafts.get(task.id) || '';
+  }
   selectedTask = task;
+  setTaskActionMessage('댓글을 불러오는 중…');
+  document.querySelector('#commentList').replaceChildren();
+  document.querySelectorAll('#taskDayList button').forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.taskId === String(task.id))));
   document.querySelector('#taskDetailTitle').textContent = task.title;
   document.querySelector('#taskDetailMeta').textContent = `${task.due_date || '마감일 없음'} · ${task.priority === 'high' ? '높은 우선순위' : '일반 우선순위'}${task.description ? ` · ${task.description}` : ''}`;
   const controls = document.querySelector('#taskStatusControls');
@@ -2959,14 +3212,29 @@ async function showTask(task) {
   controls.hidden = !(currentProfile?.role === 'admin' || assigned);
   document.querySelector('#taskStatus').value = task.status;
   document.querySelector('#commentForm').hidden = false;
-  const response = await api(`task_comments?select=id,author_id,body,created_at&task_id=eq.${task.id}&order=created_at.asc`);
-  const comments = response.ok ? await response.json() : [];
-  taskComments.set(task.id, comments.map((comment) => ({ task_id: task.id, author_id: comment.author_id, created_at: comment.created_at })));
-  markTaskRead(task.id);
-  renderCalendar();
-  const profilesResponse = await api('profiles?select=id,display_name');
-  const names = profilesResponse.ok ? new Map((await profilesResponse.json()).map((profile) => [profile.id, profile.display_name])) : new Map();
-  const list = document.querySelector('#commentList'); list.replaceChildren(...comments.map((comment) => { const item = document.createElement('article'); item.className = 'comment'; item.innerHTML = `<b>${names.get(comment.author_id) || '사용자'}</b><span></span>`; item.querySelector('span').textContent = comment.body; return item; }));
+  try {
+    const [response, profilesResponse] = await Promise.all([
+      api(`task_comments?select=id,author_id,body,created_at&task_id=eq.${task.id}&order=created_at.asc`),
+      api('profiles?select=id,display_name'),
+    ]);
+    if (!response.ok) throw new Error('comments unavailable');
+    const comments = await response.json();
+    const names = profilesResponse.ok ? new Map((await profilesResponse.json()).map((profile) => [profile.id, profile.display_name])) : new Map();
+    if (requestVersion !== taskDetailVersion) return;
+    taskComments.set(task.id, comments.map((comment) => ({ task_id: task.id, author_id: comment.author_id, created_at: comment.created_at })));
+    markTaskRead(task.id);
+    renderCalendar();
+    const list = document.querySelector('#commentList');
+    list.replaceChildren(...comments.map((comment) => {
+      const item = document.createElement('article'); item.className = 'comment';
+      const name = document.createElement('b'); name.textContent = names.get(comment.author_id) || '사용자';
+      const body = document.createElement('span'); body.textContent = comment.body;
+      item.append(name, body); return item;
+    }));
+    setTaskActionMessage('');
+  } catch {
+    if (requestVersion === taskDetailVersion) setTaskActionMessage('댓글을 불러오지 못했습니다. 업무를 다시 선택해 확인하세요.');
+  }
 }
 
 const SESSION_STORAGE_KEY = 'pharmacy-session';
@@ -3013,6 +3281,7 @@ async function completeLogin(session) {
     document.querySelector('[data-view="analytics"]').hidden = true;
   } else {
     document.querySelector('#ownerTaskForm').hidden = false;
+    document.querySelector('#newTaskDueDate').value = getLocalDate();
     document.querySelector('#dashboardNewAppointment').hidden = false;
     document.querySelector('#purchaseNav').hidden = false;
     document.querySelector('#structureNav').hidden = false;
@@ -3030,32 +3299,16 @@ async function completeLogin(session) {
       document.querySelector('#purchaseMessage').textContent = error.message;
       productMessage.textContent = error.message;
     }
-    const itemResponse = await apiAllResponse('sale_items?select=sale_id,product_id,quantity,amount&order=id.asc');
-    const salesResponse = await apiAllResponse('sales?select=id,sold_at,total_amount,status&status=eq.completed&order=id.asc');
-    try {
-      analyticsProfit = await apiAll('v_sale_items_profit?select=sold_at,product_id,quantity,amount,cost_amount&status=eq.completed&order=sale_item_id.asc');
-    } catch (error) {
-      analyticsProfit = [];
-    }
-    const weatherResponse = await fetch(`${config.supabaseUrl}/rest/v1/environmental_data?select=date,temp_max,temp_min,temp_mean,precipitation_mm&order=date`, { headers: { apikey: config.supabasePublishableKey, Authorization: `Bearer ${accessToken}` } });
-    if (itemResponse.ok && salesResponse.ok) {
-      const completedSales = await salesResponse.json();
-      const completedIds = new Set(completedSales.map((sale) => sale.id));
-      const completedItems = (await itemResponse.json()).filter((item) => completedIds.has(item.sale_id));
-      analyticsSales = completedSales;
-      analyticsSaleItems = completedItems;
-      analyticsWeather = weatherResponse.ok ? await weatherResponse.json() : [];
+    const weatherResponse = await api('environmental_data?select=date,temp_max,temp_min,temp_mean,precipitation_mm&order=date');
+    analyticsWeather = weatherResponse.ok ? await weatherResponse.json() : [];
+    await refreshAnalyticsData();
+    loadSeoulForecast().then((forecast) => {
+      analyticsForecast = forecast; analyticsForecastError = '';
       renderAnalytics(analyticsSales, analyticsSaleItems);
-      loadSeoulForecast().then((forecast) => {
-        analyticsForecast = forecast;
-        analyticsForecastError = '';
-        renderAnalytics(analyticsSales, analyticsSaleItems);
-      }).catch((error) => {
-        analyticsForecast = [];
-        analyticsForecastError = error.message;
-        renderAnalytics(analyticsSales, analyticsSaleItems);
-      });
-    }
+    }).catch(() => {
+      analyticsForecast = []; analyticsForecastError = '예보를 불러오지 못했습니다.';
+      renderAnalytics(analyticsSales, analyticsSaleItems);
+    });
   }
   loginButton.textContent = '로그아웃';
   saveSession(session);
@@ -3081,10 +3334,10 @@ async function restoreSession() {
 
 loginButton.addEventListener('click', () => {
   if (accessToken) {
-    signOut();
+    signOut().catch(() => { document.querySelector('#roleBadge').textContent = '로그아웃을 완료하지 못했습니다. 인터넷 연결을 확인하고 다시 눌러주세요.'; });
     return;
   }
-  if (!hasConfig()) { document.querySelector('#loginMessage').textContent = 'config.js 설정이 필요합니다.'; loginDialog.showModal(); return; }
+  if (!hasConfig()) { document.querySelector('#loginMessage').textContent = '연결 설정을 확인할 수 없습니다. 관리자에게 문의해 주세요.'; loginDialog.showModal(); return; }
   loginDialog.showModal();
 });
 document.querySelector('#closeLogin').addEventListener('click', () => loginDialog.close());
@@ -3132,11 +3385,12 @@ salePetNewButton.addEventListener('click', () => openNewPetDialog('sales'));
 salePetSearch.addEventListener('focus', () => renderSalePetSuggestions(salePetSearch.value));
 salePetSearch.addEventListener('input', () => { renderSalePetSuggestions(salePetSearch.value); updateSalePetHistory(); });
 salePetSearch.addEventListener('keydown', (event) => {
-  if (event.key === 'ArrowDown') { event.preventDefault(); renderSalePetSuggestions(salePetSearch.value); moveSalePetSuggestion(1); }
-  if (event.key === 'ArrowUp') { event.preventDefault(); renderSalePetSuggestions(salePetSearch.value); moveSalePetSuggestion(-1); }
-  if (event.key === 'Escape') closeSalePetSuggestions();
+  if (event.key === 'ArrowDown') { event.preventDefault(); if (salePetSuggestions.hidden) renderSalePetSuggestions(salePetSearch.value); moveSalePetSuggestion(1); }
+  if (event.key === 'ArrowUp') { event.preventDefault(); if (salePetSuggestions.hidden) renderSalePetSuggestions(salePetSearch.value); moveSalePetSuggestion(-1); }
+  if (event.key === 'Escape') { event.preventDefault(); closeSalePetSuggestions(); }
   if (event.key === 'Enter') {
     event.preventDefault();
+    if (salePetSuggestions.hidden) return;
     const options = [...salePetSuggestions.querySelectorAll('.product-suggestion')];
     const selectedOption = options[activeSalePetSuggestionIndex] || options[0];
     selectedOption?.click();
@@ -3204,11 +3458,12 @@ purchaseProductSearch.addEventListener('input', () => {
   renderPurchaseSuggestions(purchaseProductSearch.value);
 });
 purchaseProductSearch.addEventListener('keydown', (event) => {
-  if (event.key === 'ArrowDown') { event.preventDefault(); renderPurchaseSuggestions(purchaseProductSearch.value); movePurchaseSuggestion(1); }
-  if (event.key === 'ArrowUp') { event.preventDefault(); renderPurchaseSuggestions(purchaseProductSearch.value); movePurchaseSuggestion(-1); }
-  if (event.key === 'Escape') closePurchaseSuggestions();
+  if (event.key === 'ArrowDown') { event.preventDefault(); if (purchaseProductSuggestions.hidden) renderPurchaseSuggestions(purchaseProductSearch.value); movePurchaseSuggestion(1); }
+  if (event.key === 'ArrowUp') { event.preventDefault(); if (purchaseProductSuggestions.hidden) renderPurchaseSuggestions(purchaseProductSearch.value); movePurchaseSuggestion(-1); }
+  if (event.key === 'Escape') { event.preventDefault(); closePurchaseSuggestions(); }
   if (event.key === 'Enter') {
     event.preventDefault();
+    if (purchaseProductSuggestions.hidden) return;
     const options = [...purchaseProductSuggestions.querySelectorAll('.product-suggestion')];
     const selectedOption = options[activePurchaseSuggestionIndex] || options[0];
     selectedOption?.click();
@@ -3255,11 +3510,12 @@ saleProductSearch.addEventListener('input', () => {
   renderProductSuggestions(saleProductSearch.value);
 });
 saleProductSearch.addEventListener('keydown', (event) => {
-  if (event.key === 'ArrowDown') { event.preventDefault(); renderProductSuggestions(saleProductSearch.value); moveSuggestion(1); }
-  if (event.key === 'ArrowUp') { event.preventDefault(); renderProductSuggestions(saleProductSearch.value); moveSuggestion(-1); }
-  if (event.key === 'Escape') closeProductSuggestions();
+  if (event.key === 'ArrowDown') { event.preventDefault(); if (saleProductSuggestions.hidden) renderProductSuggestions(saleProductSearch.value); moveSuggestion(1); }
+  if (event.key === 'ArrowUp') { event.preventDefault(); if (saleProductSuggestions.hidden) renderProductSuggestions(saleProductSearch.value); moveSuggestion(-1); }
+  if (event.key === 'Escape') { event.preventDefault(); closeProductSuggestions(); }
   if (event.key === 'Enter') {
     event.preventDefault();
+    if (saleProductSuggestions.hidden) return;
     const options = [...saleProductSuggestions.querySelectorAll('.product-suggestion')];
     const selectedOption = options[activeSuggestionIndex] || options[0];
     selectedOption?.click();
@@ -3270,9 +3526,102 @@ document.addEventListener('click', (event) => {
 });
 document.querySelector('#previousMonth').addEventListener('click', () => { calendarDate.setMonth(calendarDate.getMonth() - 1); renderCalendar(); });
 document.querySelector('#nextMonth').addEventListener('click', () => { calendarDate.setMonth(calendarDate.getMonth() + 1); renderCalendar(); });
-document.querySelector('#saveTaskStatus').addEventListener('click', async () => { if (!selectedTask) return; const status = document.querySelector('#taskStatus').value; const response = await api(`action_tasks?id=eq.${selectedTask.id}`, { method: 'PATCH', body: JSON.stringify({ status }) }); if (response.ok) { selectedTask.status = status; await loadTasks(); renderTodaySchedule(); } });
-document.querySelector('#commentForm').addEventListener('submit', async (event) => { event.preventDefault(); if (!selectedTask) return; const body = document.querySelector('#commentBody').value.trim(); if (!body) return; const response = await api('task_comments', { method: 'POST', body: JSON.stringify({ task_id: selectedTask.id, body }) }); if (response.ok) { document.querySelector('#commentBody').value = ''; showTask(selectedTask); } });
-document.querySelector('#newTaskForm').addEventListener('submit', async (event) => { event.preventDefault(); const title = document.querySelector('#newTaskTitle').value.trim(); const assignee = document.querySelector('#newTaskAssignee').value; if (!title || !assignee) return; const response = await api('action_tasks', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ title, due_date: document.querySelector('#newTaskDueDate').value || null, scheduled_time: document.querySelector('#newTaskTime').value || null, priority: document.querySelector('#newTaskPriority').value }) }); if (response.ok) { const [task] = await response.json(); const assigned = await api('task_assignees', { method: 'POST', body: JSON.stringify({ task_id: task.id, user_id: assignee }) }); if (assigned.ok) { event.target.reset(); await loadTasks(); await loadDashboard(); } } });
+document.querySelector('#saveTaskStatus').addEventListener('click', async (event) => {
+  if (!selectedTask || event.target.disabled) return;
+  const task = selectedTask;
+  const status = document.querySelector('#taskStatus').value;
+  const release = lockSubmission('#taskStatusControls', event.target, '저장 중…');
+  setTaskActionMessage('업무 상태를 저장하고 있습니다.');
+  let saved = false;
+  try {
+    const response = await api(`action_tasks?id=eq.${task.id}`, { method: 'PATCH', body: JSON.stringify({ status }) });
+    if (!response.ok) throw new Error('status not saved');
+    saved = true; task.status = status;
+    await loadTasks(); renderTodaySchedule();
+    if (selectedTask?.id === task.id) {
+      selectedTask.status = status;
+      setTaskActionMessage('업무 상태를 저장했습니다.');
+    }
+  } catch {
+    if (selectedTask?.id === task.id) {
+      document.querySelector('#taskStatus').value = task.status;
+      setTaskActionMessage(saved ? '업무 상태를 저장했습니다. 화면은 새로고침 후 확인해 주세요.' : '상태를 저장하지 못했습니다. 연결 상태와 변경 권한을 확인한 뒤 다시 저장하세요.');
+    }
+  } finally { release(); }
+});
+document.querySelector('#commentForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const button = event.target.querySelector('button[type="submit"]');
+  if (!selectedTask || button.disabled) return;
+  const task = selectedTask;
+  const input = document.querySelector('#commentBody');
+  const body = input.value.trim();
+  if (!body) { input.focus(); return; }
+  button.disabled = true;
+  setTaskActionMessage('댓글을 저장하고 있습니다.');
+  try {
+    const response = await api('task_comments', { method: 'POST', body: JSON.stringify({ task_id: task.id, body }) });
+    if (!response.ok) throw new Error('comment not saved');
+    if (taskCommentDrafts.get(task.id)?.trim() === body) taskCommentDrafts.delete(task.id);
+    if (selectedTask?.id === task.id) {
+      if (input.value.trim() === body) input.value = '';
+      await showTask(selectedTask);
+      if (selectedTask?.id === task.id) setTaskActionMessage('댓글을 등록했습니다.');
+    }
+  } catch {
+    if (selectedTask?.id === task.id) setTaskActionMessage('댓글 저장 결과를 확인하지 못했습니다. 입력한 내용은 보관했습니다. 업무를 다시 선택해 등록 여부를 확인하세요.');
+  } finally { button.disabled = false; }
+});
+let pendingTaskAssignment = null;
+document.querySelector('#newTaskForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const form = event.target;
+  const button = form.querySelector('button[type="submit"]');
+  if (button.disabled) return;
+  const title = document.querySelector('#newTaskTitle').value.trim();
+  const assignee = document.querySelector('#newTaskAssignee').value;
+  if (!title || !assignee) return;
+  let message = document.querySelector('#newTaskMessage');
+  if (!message) { message = document.createElement('p'); message.id = 'newTaskMessage'; message.className = 'form-message'; message.setAttribute('role', 'status'); form.after(message); }
+  const release = lockSubmission('#newTaskForm', button, '업무 저장 중…');
+  let creationUnknown = false;
+  let completed = false;
+  try {
+    if (!pendingTaskAssignment) {
+      let response;
+      try {
+        response = await api('action_tasks', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ title, due_date: document.querySelector('#newTaskDueDate').value || null, scheduled_time: document.querySelector('#newTaskTime').value || null, priority: document.querySelector('#newTaskPriority').value }) });
+      } catch { creationUnknown = true; throw new Error('creation result unknown'); }
+      if (!response.ok) throw new Error('task not saved');
+      creationUnknown = true;
+      const [task] = await response.json();
+      pendingTaskAssignment = { id: task.id, title };
+      creationUnknown = false;
+    }
+    const assigned = await api('task_assignees', { method: 'POST', body: JSON.stringify({ task_id: pendingTaskAssignment.id, user_id: assignee }) });
+    // A retry can find the exact assignment already saved after an interrupted response.
+    if (!assigned.ok) {
+      if (assigned.status !== 409) throw new Error('assignment not saved');
+      const verified = await api(`task_assignees?select=task_id&task_id=eq.${pendingTaskAssignment.id}&user_id=eq.${assignee}`);
+      if (!verified.ok || !(await verified.json()).length) throw new Error('assignment not confirmed');
+    }
+    pendingTaskAssignment = null; completed = true;
+    form.reset(); document.querySelector('#newTaskDueDate').value = getLocalDate();
+    message.textContent = '업무를 등록했습니다.';
+    try { await loadTasks(); await loadDashboard(); }
+    catch { message.textContent = '업무를 등록했습니다. 화면은 새로고침 후 확인해 주세요.'; }
+  } catch {
+    message.textContent = pendingTaskAssignment
+      ? `“${pendingTaskAssignment.title}” 업무는 저장됐지만 담당자 연결을 확인하지 못했습니다. 담당자를 확인하고 연결을 다시 시도하세요. 같은 업무를 새로 만들지 않습니다.`
+      : creationUnknown ? '업무 저장 결과를 확인하지 못했습니다. 다시 등록하기 전에 새로고침해 달력을 확인하세요.' : '업무를 저장하지 못했습니다. 입력 내용과 연결 상태를 확인해 주세요.';
+  } finally {
+    release();
+    form.querySelectorAll('input,#newTaskPriority').forEach((control) => { control.disabled = Boolean(pendingTaskAssignment); });
+    if (pendingTaskAssignment) button.textContent = '담당자 연결 다시 시도';
+    else if (completed) button.textContent = '업무 등록';
+    if (creationUnknown) { button.disabled = true; button.textContent = '새로고침 후 결과 확인'; }
+  }
+});
 
 document.querySelector('#loginForm').addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -3295,10 +3644,11 @@ document.querySelector('#addSaleItem').addEventListener('click', () => {
   const salePriceInput = document.querySelector('#salePrice');
   const price = Number(salePriceInput.value);
   if (!selected) { saleProductSearch.focus(); saleProductHint.textContent = '목록에서 상품을 하나 선택해 주세요.'; return; }
-  if (!Number.isFinite(quantity) || quantity <= 0) { document.querySelector('#saleQuantity').focus(); return; }
+  if (!Number.isFinite(quantity) || quantity <= 0) { document.querySelector('#saleMessage').textContent = '수량은 0보다 큰 숫자로 입력해 주세요.'; document.querySelector('#saleQuantity').focus(); return; }
   if (salePriceInput.value === '' || !Number.isFinite(price) || price < 0) { salePriceInput.focus(); saleProductHint.textContent = '판매가를 입력해 주세요.'; return; }
   const petLabel = salePetSearch.value.trim();
   const petId = petLabel ? salePetDirectory.get(petLabel) || null : null;
+  if (petLabel && !petId) { salePetSearch.focus(); document.querySelector('#saleMessage').textContent = '반려동물 이름을 추천 목록에서 눌러 선택해 주세요. 연결하지 않으려면 이름을 지워주세요.'; return; }
   const existing = saleItems.find((item) => item.id === selected.id && item.petId === petId && item.sale_price === price);
   if (existing) existing.quantity += quantity;
   else saleItems.push({ ...selected, sale_price: price, quantity, petId, petLabel: petId ? petLabel : null });
@@ -3318,7 +3668,7 @@ document.querySelector('#addPurchaseItem').addEventListener('click', () => {
   const unitCost = Number(purchaseUnitCost.value);
   const message = document.querySelector('#purchaseMessage');
   if (!product) { purchaseProductSearch.focus(); message.textContent = '추천 목록에서 상품을 하나 선택해 주세요.'; return; }
-  if (!Number.isFinite(quantity) || quantity <= 0) { purchaseQuantity.focus(); return; }
+  if (!Number.isFinite(quantity) || quantity <= 0) { message.textContent = '수량은 0보다 큰 숫자로 입력해 주세요.'; purchaseQuantity.focus(); return; }
   if (!Number.isFinite(unitCost) || unitCost < 0 || purchaseUnitCost.value === '') { purchaseUnitCost.focus(); return; }
   const existing = purchaseItems.find((item) => item.id === product.id && item.unitCost === unitCost && item.lotNo === purchaseLotNo.value.trim() && item.expiryDate === purchaseExpiryDate.value);
   if (existing) existing.quantity += quantity;
@@ -3354,36 +3704,64 @@ document.querySelector('#salePrice').addEventListener('keydown', (event) => {
   }
 });
 
+// Lock the current form until its request finishes; preserve pre-existing disabled controls.
+function lockSubmission(selector, button, label) {
+  const section = document.querySelector(selector);
+  const controls = [...section.querySelectorAll('input,select,button,textarea')].filter((control) => !control.disabled);
+  const originalLabel = button.textContent;
+  controls.forEach((control) => { control.disabled = true; });
+  section.setAttribute('aria-busy', 'true');
+  button.textContent = label;
+  return () => {
+    controls.forEach((control) => { if (control.isConnected) control.disabled = false; });
+    section.removeAttribute('aria-busy');
+    button.textContent = originalLabel;
+  };
+}
+let lastSaleAttempt = null;
+
 document.querySelector('#submitSale').addEventListener('click', async () => {
   const message = document.querySelector('#saleMessage');
-  if (saleItems.length === 0) return;
+  const button = document.querySelector('#submitSale');
+  if (button.disabled || saleItems.length === 0) return;
+  if (!saleDate.value || saleDate.value > getLocalDate()) { message.textContent = '판매일은 오늘 또는 이전 날짜를 선택해 주세요.'; saleDate.focus(); return; }
+  const release = lockSubmission('#sales', button, '판매 등록 중…');
   try {
+    const payload = { p_payment_method: document.querySelector('#paymentMethod').value, p_items: saleItems.map((item) => ({ product_id: item.id, quantity: item.quantity, pet_id: item.petId || null, unit_price: item.sale_price })), p_sold_at: saleDate.value };
+    const signature = JSON.stringify({ ...payload, saleDate: saleDate.value });
+    if (lastSaleAttempt?.signature !== signature) lastSaleAttempt = { signature, key: crypto.randomUUID() };
+    payload.p_idempotency_key = lastSaleAttempt.key;
     const response = await fetch(`${config.supabaseUrl}/rest/v1/rpc/rpc_create_sale`, {
       method: 'POST',
       headers: { apikey: config.supabasePublishableKey, Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ p_idempotency_key: crypto.randomUUID(), p_payment_method: document.querySelector('#paymentMethod').value, p_items: saleItems.map((item) => ({ product_id: item.id, quantity: item.quantity, pet_id: item.petId || null, unit_price: item.sale_price })), ...(saleDate.value !== getLocalDate() ? { p_sold_at: saleDate.value } : {}) })
+      body: JSON.stringify(payload)
     });
     if (!response.ok) {
-      const errorBody = await response.json().catch(() => ({}));
-      throw new Error(errorBody.message || errorBody.hint || '판매 등록에 실패했습니다. 재고 수량을 확인하세요.');
+      throw new Error([401, 403].includes(response.status) ? '로그인 상태와 판매 등록 권한을 확인해 주세요. 판매 목록은 보관했습니다.' : '판매를 등록하지 못했습니다. 재고 수량·판매일·금액을 확인해 주세요. 판매 목록은 보관했습니다.');
     }
     const saleId = await response.json();
+    lastSaleAttempt = null;
     saleItems = []; renderSale();
     salePetSearch.value = ''; salePetId.value = '';
+    updateSalePetHistory();
     try {
-      await Promise.all([refreshProductsAfterSale(), loadDashboard(), prepareSalesHistory()]);
+      await Promise.all([refreshProductsAfterSale(), loadDashboard(), prepareSalesHistory(payload.p_sold_at.slice(0, 7)), refreshAnalyticsData()]);
       message.textContent = `판매가 등록되었습니다. 판매 번호: ${saleId} · 대시보드와 판매 내역에 반영되었습니다.`;
     } catch {
       message.textContent = `판매가 등록되었습니다. 판매 번호: ${saleId} · 대시보드는 새로고침 후 확인해 주세요.`;
     }
-  } catch (error) { message.textContent = error.message; }
+  } catch (error) { message.textContent = error instanceof TypeError ? '연결이 끊겨 판매 결과를 확인하지 못했습니다. 이 화면을 새로고침하지 말고 같은 목록으로 다시 등록해 주세요.' : error.message; }
+  finally { release(); }
 });
 
 document.querySelector('#submitPurchase').addEventListener('click', async () => {
   const message = document.querySelector('#purchaseMessage');
+  const button = document.querySelector('#submitPurchase');
+  if (button.disabled) return;
   if (!purchaseSupplier.value) { purchaseSupplier.focus(); message.textContent = '거래처를 선택해 주세요.'; return; }
   if (!purchaseDate.value) { purchaseDate.focus(); return; }
   if (!purchaseItems.length) { purchaseProductSearch.focus(); message.textContent = '입고할 상품을 목록에 담아 주세요.'; return; }
+  const release = lockSubmission('#purchases', button, '입고 등록 중…');
   try {
     const response = await fetch(`${config.supabaseUrl}/rest/v1/rpc/rpc_receive_purchase`, {
       method: 'POST',
@@ -3391,15 +3769,20 @@ document.querySelector('#submitPurchase').addEventListener('click', async () => 
       body: JSON.stringify({ p_supplier_id: Number(purchaseSupplier.value), p_purchased_at: purchaseDate.value, p_items: purchaseItems.map((item) => ({ product_id: item.id, quantity: item.quantity, unit_cost: item.unitCost, lot_no: item.lotNo, expiry_date: item.expiryDate })) })
     });
     if (!response.ok) {
-      const errorBody = await response.json().catch(() => ({}));
-      throw new Error(errorBody.message || errorBody.hint || '입고 등록에 실패했습니다. 거래처와 수량, 단가를 확인해 주세요.');
+      throw new Error([401, 403].includes(response.status) ? '로그인 상태와 입고 등록 권한을 확인해 주세요. 입고 목록은 보관했습니다.' : '입고를 등록하지 못했습니다. 거래처·수량·단가를 확인해 주세요. 입고 목록은 보관했습니다.');
     }
     const purchaseId = await response.json();
     try { localStorage.setItem(LAST_SUPPLIER_KEY, purchaseSupplier.value); } catch { /* 저장 불가 시 무시 */ }
     purchaseItems = []; renderPurchase();
-    await Promise.all([refreshProductsAfterSale(), loadDashboard()]);
-    message.textContent = `입고가 등록되었습니다. 입고 번호: ${purchaseId} · 재고와 대시보드에 반영되었습니다.`;
-  } catch (error) { message.textContent = error.message; }
+    try {
+      await Promise.all([refreshProductsAfterSale(), loadDashboard(), refreshAnalyticsData()]);
+      renderCostLookup(costLookupSearch.value);
+      message.textContent = `입고가 등록되었습니다. 입고 번호: ${purchaseId} · 재고와 매입단가를 갱신했습니다.`;
+    } catch {
+      message.textContent = `입고가 등록되었습니다. 입고 번호: ${purchaseId} · 화면 갱신이 늦어지고 있습니다. 다시 등록하지 말고 새로고침해 확인하세요.`;
+    }
+  } catch (error) { message.textContent = error instanceof TypeError ? '입고 결과를 확인하지 못했습니다. 다시 등록하기 전에 새로고침하여 재고와 매입단가를 확인하세요.' : error.message; }
+  finally { release(); }
 });
 
 restoreSession();
