@@ -403,4 +403,134 @@ check('sumQuantity: (반려동물, 상품)별 수량 합계, 반려동물 없는
   assert.equal(Core.sumQuantity([]).size, 0);
 });
 
+// ---- 4단계: 알림 후보 계산 ----
+const candBase = () => ({
+  today: '2026-11-22',
+  dueRows: [{ pet_id: 1, product_id: 10, due_on: '2026-11-29', sold_on: '2026-11-22' }],
+  rules: [{ product_id: 10, kind: 'rebuy', lead_days: 7 }],
+  pets: [{ id: 1, name: '초코', owner_id: 100 }],
+  prefs: [],
+  logs: [],
+  validPurchases: new Set(['1:10:2026-11-22']),
+  productNames: new Map([[10, '심장사상충약']])
+});
+const build = (patch = {}) => Core.buildCandidates({ ...candBase(), ...patch });
+
+check('buildCandidates: 기본 재구매 후보(알림 시작일 도래)', () => {
+  const [c] = build();
+  assert.deepEqual({ ...c }, { key: '1:10', petId: 1, petName: '초코', ownerId: 100, productId: 10, productName: '심장사상충약', kind: 'rebuy', refKey: 'p10', dueOn: '2026-11-29', startOn: '2026-11-22', showOn: '2026-11-29', overdue: false, ready: true });
+});
+
+check('buildCandidates: 시작일 전이면 ready=false로 남는다', () => {
+  const [c] = build({ today: '2026-11-21' });
+  assert.equal(c.ready, false);
+  assert.equal(c.startOn, '2026-11-22');
+});
+
+check('buildCandidates: 규칙 없음·구매 취소·수신거부는 제외', () => {
+  assert.equal(build({ rules: [] }).length, 0);
+  assert.equal(build({ validPurchases: new Set() }).length, 0);
+  assert.equal(build({ prefs: [{ owner_id: 100, status: 'optout' }] }).length, 0);
+  assert.equal(build({ prefs: [{ owner_id: 100, status: 'consented' }] }).length, 1);
+});
+
+check('buildCandidates: 이미 보냄·넘김 기록이 같은 건이면 제외, 다른 예정일·되돌림은 남는다', () => {
+  const log = (patch) => ({ pet_id: 1, kind: 'rebuy', ref_key: 'p10', due_on: '2026-11-29', status: 'sent', ...patch });
+  assert.equal(build({ logs: [log({})] }).length, 0);
+  assert.equal(build({ logs: [log({ status: 'skip' })] }).length, 0);
+  assert.equal(build({ logs: [log({ status: 'void' })] }).length, 1);
+  assert.equal(build({ logs: [log({ due_on: '2026-12-29' })] }).length, 1);
+  assert.equal(build({ logs: [log({ kind: 'vaccine' })] }).length, 0); // 규칙 종류를 나중에 바꿔도 같은 건은 다시 제안하지 않는다
+});
+
+check('buildCandidates: 재구매는 기한이 지나면 제외, 접종은 7일까지 유예(overdue, 오늘 칸)', () => {
+  assert.equal(build({ today: '2026-11-30' }).length, 0);
+  const vaccine = { rules: [{ product_id: 10, kind: 'vaccine', lead_days: 7 }] };
+  const [late] = build({ ...vaccine, today: '2026-12-02' });
+  assert.equal(late.overdue, true);
+  assert.equal(late.showOn, '2026-12-02');
+  assert.equal(late.ready, true);
+  assert.equal(build({ ...vaccine, today: '2026-12-06' }).length, 1); // 예정일 +7일
+  assert.equal(build({ ...vaccine, today: '2026-12-07' }).length, 0);
+});
+
+check('buildCandidates: 재구매는 마지막 구매가 6개월(183일)을 넘으면 동의한 보호자만', () => {
+  const old = { dueRows: [{ pet_id: 1, product_id: 10, due_on: '2026-11-29', sold_on: '2026-05-01' }], validPurchases: new Set(['1:10:2026-05-01']) };
+  assert.equal(build(old).length, 0);
+  assert.equal(build({ ...old, prefs: [{ owner_id: 100, status: 'consented' }] }).length, 1);
+  const edge = { dueRows: [{ pet_id: 1, product_id: 10, due_on: '2026-11-29', sold_on: '2026-05-23' }], validPurchases: new Set(['1:10:2026-05-23']) };
+  assert.equal(build(edge).length, 1); // 183일째까지는 허용
+  const over = { dueRows: [{ pet_id: 1, product_id: 10, due_on: '2026-11-29', sold_on: '2026-05-22' }], validPurchases: new Set(['1:10:2026-05-22']) };
+  assert.equal(build(over).length, 0);
+});
+
+check('buildCandidates: 접종 안내는 6개월 제한이 없다', () => {
+  const [c] = build({ rules: [{ product_id: 10, kind: 'vaccine', lead_days: 7 }], dueRows: [{ pet_id: 1, product_id: 10, due_on: '2026-11-29', sold_on: '2025-11-29' }], validPurchases: new Set(['1:10:2025-11-29']) });
+  assert.equal(c.kind, 'vaccine');
+});
+
+check('buildCandidates: 반려동물이 없거나 상품 이름이 없어도 죽지 않고 정렬된다', () => {
+  const rows = build({
+    dueRows: [
+      { pet_id: 1, product_id: 10, due_on: '2026-11-30', sold_on: '2026-11-22' },
+      { pet_id: 2, product_id: 10, due_on: '2026-11-25', sold_on: '2026-11-22' },
+      { pet_id: 3, product_id: 10, due_on: '2026-11-24', sold_on: '2026-11-22' }
+    ],
+    pets: [{ id: 1, name: '초코', owner_id: 100 }, { id: 2, name: '보리', owner_id: 101 }],
+    validPurchases: new Set(['1:10:2026-11-22', '2:10:2026-11-22', '3:10:2026-11-22']),
+    productNames: new Map()
+  });
+  assert.deepEqual(rows.map((c) => c.petId), [2, 1]); // 3번은 반려동물 정보가 없어 제외, 나머지는 날짜순
+  assert.equal(rows[0].productName, '상품');
+});
+
+check('candidatesByDay: 7일 칸에 날짜별로 담고 범위 밖은 뺀다', () => {
+  const cands = build({
+    dueRows: [
+      { pet_id: 1, product_id: 10, due_on: '2026-11-29', sold_on: '2026-11-22' },
+      { pet_id: 1, product_id: 11, due_on: '2026-12-10', sold_on: '2026-11-22' }
+    ],
+    rules: [{ product_id: 10, kind: 'rebuy', lead_days: 7 }, { product_id: 11, kind: 'rebuy', lead_days: 30 }],
+    validPurchases: new Set(['1:10:2026-11-22', '1:11:2026-11-22']),
+    productNames: new Map([[10, 'A'], [11, 'B']])
+  });
+  const byDay = Core.candidatesByDay(cands, '2026-11-22', 7);
+  assert.equal(byDay.size, 7);
+  assert.deepEqual([...byDay.keys()][0], '2026-11-22');
+  assert.equal(byDay.get('2026-11-28').length, 0);
+  assert.equal(byDay.get('2026-11-29')?.length ?? 0, 0); // 7일 칸은 22~28일
+  const next = Core.candidatesByDay(cands, '2026-11-25', 7);
+  assert.equal(next.get('2026-11-29').length, 1);
+  assert.equal(next.get('2026-12-01').length, 0);
+});
+
+check('rebuyText: 광고 표시·수신거부 안내·병원 정보가 들어가고 QR에 들어갈 만큼 짧다', () => {
+  const text = Core.rebuyText({ petName: '초코', productName: '심장사상충약' });
+  assert.ok(text.startsWith('(광고) '));
+  assert.ok(text.includes('수신거부'));
+  assert.ok(text.includes('구민동물병원') && text.includes('02-543-1945'));
+  assert.ok(text.includes('초코') && text.includes('심장사상충약'));
+  assert.equal(Core.checkQr('01012345678', text).ok, true);
+  const long = Core.rebuyText({ petName: '아주아주긴반려동물이름입니다', productName: '아주 긴 상품 이름'.repeat(8) });
+  assert.equal(Core.checkQr('01012345678', long).ok, true);
+  assert.ok(long.startsWith('(광고) ') && long.includes('수신거부'));
+});
+
+
+check('buildCandidates: 메시지 화면에서 직접 보낸 같은 반려동물·같은 예정일 접종 안내도 처리된 것으로 본다', () => {
+  const vaccine = { rules: [{ product_id: 10, kind: 'vaccine', lead_days: 7 }] };
+  const manual = { pet_id: 1, kind: 'manual', ref_key: 'vaccine', due_on: '2026-11-29', status: 'sent' };
+  assert.equal(build({ ...vaccine, logs: [manual] }).length, 0);
+  assert.equal(build({ ...vaccine, logs: [{ ...manual, due_on: '2026-12-29' }] }).length, 1);
+  assert.equal(build({ ...vaccine, logs: [{ ...manual, ref_key: 'custom' }] }).length, 1);
+  assert.equal(build({ logs: [manual] }).length, 1); // 재구매 후보는 접종 수동 발송과 무관
+});
+
+check('rebuyText: 설정에서 바꾼 병원 이름·전화번호를 따르고, 전화번호를 끄면 넣지 않는다', () => {
+  const custom = Core.rebuyText({ petName: '초코', productName: '약', clinicName: '새병원', clinicPhone: '031-111-2222' });
+  assert.ok(custom.includes('[새병원]') && custom.includes('031-111-2222') && !custom.includes('02-543-1945'));
+  const noPhone = Core.rebuyText({ petName: '초코', productName: '약', clinicName: '새병원', clinicPhone: '' });
+  assert.ok(!noPhone.includes('문의:') && noPhone.includes('수신거부'));
+});
+
 console.log(process.exitCode ? 'messaging-core: 실패 있음' : `messaging-core: ${count}개 통과`);

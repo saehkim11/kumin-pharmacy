@@ -44,14 +44,9 @@
 
         <section class="view active" id="dashboard" aria-labelledby="pageTitle">
           <section class="panel today-schedule" id="todaySchedulePanel">
-            <div class="panel-heading"><div><p class="eyebrow">SCHEDULE</p><h2 id="todayScheduleTitle">오늘 일정</h2></div><button type="button" class="login-button" id="dashboardNewAppointment" hidden>+ 새 예약</button></div>
-            <div class="legacy-sales-view-tabs today-schedule-tabs" id="todayScheduleTabs">
-              <button type="button" class="active" data-range="today">오늘</button>
-              <button type="button" data-range="tomorrow">내일</button>
-              <button type="button" data-range="week">이번주</button>
-            </div>
-            <div id="todayScheduleList"></div>
-            <p class="empty-message" id="todayScheduleEmpty" hidden>등록된 예약·업무가 없습니다.</p>
+            <div class="panel-heading"><div><p class="eyebrow">SCHEDULE</p><h2 id="todayScheduleTitle">이번 한 주 일정</h2></div><button type="button" class="login-button" id="dashboardNewAppointment" hidden>+ 새 예약</button></div>
+            <div class="week-strip" id="weekStrip" aria-live="polite"></div>
+            <p class="empty-message" id="todayScheduleEmpty" hidden>이번 한 주에 등록된 예약·업무가 없습니다.</p>
           </section>
           <section class="panel dashboard-news" id="dashboardNews" aria-labelledby="dashboardNewsTitle" hidden>
             <div class="dashboard-news-heading"><div><p class="eyebrow">PET POLICY &amp; INDUSTRY</p><h2 id="dashboardNewsTitle">반려동물·동물의료 알림</h2><p>보호자에게 안내할 수 있는 정부·지자체 정책과 동물의료·동물약품 발표입니다.</p></div><span class="dashboard-news-source">공식·전문 매체</span></div>
@@ -297,6 +292,14 @@
         </section>
 
         <section class="view" id="messaging">
+          <section class="panel msg-candidates" id="msgCandidates" hidden>
+            <p class="eyebrow">알림 후보 · 관리자 전용</p><h2>알림 보낼 때예요</h2>
+            <p class="empty-message">판매 화면에서 정해 둔 다음 알림일이 가까워진 건이에요. [알림 보내기]를 누르면 문구가 채워져요. 보내지 않을 건은 [넘김]을 누르세요.</p>
+            <p class="msg-warning" id="msgCandidatesFailedNote" role="status" hidden>알림 후보를 불러오지 못했어요. 지금 보이는 목록은 이전에 불러온 것이에요.</p>
+            <div id="msgCandidatesList"></div>
+            <p class="empty-message" id="msgCandidatesEmpty" hidden>지금 알림 보낼 건이 없어요.</p>
+            <p class="msg-hint" id="msgCandidatesNote" aria-live="polite"></p>
+          </section>
           <section class="panel msg-panel">
             <p class="eyebrow">접종 안내 문자 · 관리자 전용</p><h2>메시지 발송</h2>
             <p class="empty-message">문구를 만들고 폰 카메라로 QR을 비추면, 폰의 문자 앱에 받는 사람과 내용이 채워져요. 폰에서 전송만 누르면 됩니다.</p>
@@ -501,8 +504,8 @@
       <p class="form-message" id="newPetFormMessage"></p>
     </dialog>
     <script src="config.js"></script>
-    <script src="qr-code.js?v=20261123f"></script>
-    <script src="messaging-core.js?v=20261123f"></script>
-    <script src="app.js?v=20261123f"></script>
+    <script src="qr-code.js?v=20261123h"></script>
+    <script src="messaging-core.js?v=20261123h"></script>
+    <script src="app.js?v=20261123h"></script>
   </body>
 </html>

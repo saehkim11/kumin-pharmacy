@@ -67,6 +67,13 @@ const petPurchaseRows = document.querySelector('#petPurchaseRows');
 const petPurchaseEmpty = document.querySelector('#petPurchaseEmpty');
 let salePetDirectory = new Map(); // label(이름(보호자)) -> pet_id, 판매 등록 시 반려동물 연결용
 const saleNextDue = document.querySelector('#saleNextDue');
+const msgCandidatesPanel = document.querySelector('#msgCandidates');
+const msgCandidatesList = document.querySelector('#msgCandidatesList');
+const msgCandidatesEmpty = document.querySelector('#msgCandidatesEmpty');
+const msgCandidatesNote = document.querySelector('#msgCandidatesNote');
+const msgCandidatesFailedNote = document.querySelector('#msgCandidatesFailedNote');
+let msgCandidate = null; // 알림 후보에서 열었을 때만: 보낸 기록을 후보와 같은 건으로 남기려고 종류·상품·예정일을 들고 있는다
+let msgCandidatesFailed = false;
 const saleConsent = document.querySelector('#saleConsent');
 const saleConsentCheck = document.querySelector('#saleConsentCheck');
 const saleConsentStatus = document.querySelector('#saleConsentStatus');
@@ -2388,71 +2395,187 @@ document.querySelectorAll('.history-tab').forEach((tab) => tab.addEventListener(
 
 const TASK_STATUS_LABEL = { todo: '할 일', doing: '진행 중', done: '완료', hold: '보류' };
 
-// 대시보드 맨 위 "오늘 일정": 공유 업무 중 오늘 날짜인 것을 시간순으로 보여준다(시간 없는 건 뒤로).
-// 시간이 적혀 있으면 사실상 예약(몇 시에 누가 오는지)이고, 없으면 그냥 오늘 할 일이다.
-let todayScheduleRange = 'today'; // 'today' | 'tomorrow' | 'week'
-const TODAY_SCHEDULE_TITLE = { today: '오늘 일정', tomorrow: '내일 일정', week: '이번주 일정' };
-const TODAY_SCHEDULE_EMPTY = { today: '오늘 등록된 예약·업무가 없습니다.', tomorrow: '내일 등록된 예약·업무가 없습니다.', week: '이번주 등록된 예약·업무가 없습니다.' };
+// 대시보드 맨 위 "이번 한 주 일정": 오늘부터 7일을 한 줄 달력으로 보여 준다.
+// 칸마다 그날의 예약·공유 업무와(관리자에게만) "알림 보낼 때예요" 후보를 함께 보여 준다. 누르면 업무 화면 / 메시지 화면으로 간다.
+const WEEK_DAY_COUNT = 7;
 
 function renderTodaySchedule() {
-  const list = document.querySelector('#todayScheduleList');
+  const strip = document.querySelector('#weekStrip');
   const empty = document.querySelector('#todayScheduleEmpty');
-  const title = document.querySelector('#todayScheduleTitle');
-  if (!list || !empty) return;
-  title.textContent = TODAY_SCHEDULE_TITLE[todayScheduleRange];
-  document.querySelectorAll('#todayScheduleTabs button').forEach((button) => {
-    button.classList.toggle('active', button.dataset.range === todayScheduleRange);
-  });
-
+  if (!strip || !empty) return;
   const today = getLocalDate();
-  const tomorrow = addDays(today, 1);
-  const weekStart = addDays(today, -new Date(`${today}T00:00:00`).getDay());
-  const weekEnd = addDays(weekStart, 6);
-  const inRange = (task) => {
-    if (todayScheduleRange === 'today') return task.due_date === today;
-    if (todayScheduleRange === 'tomorrow') return task.due_date === tomorrow;
-    return task.due_date >= weekStart && task.due_date <= weekEnd;
-  };
-  const filtered = tasks.filter(inRange);
-  if (!filtered.length) {
-    list.replaceChildren();
-    empty.hidden = false;
-    empty.textContent = TODAY_SCHEDULE_EMPTY[todayScheduleRange];
-    return;
-  }
-  empty.hidden = true;
-  const showDate = todayScheduleRange === 'week';
-  const sorted = [...filtered].sort((a, b) => {
-    if (a.due_date !== b.due_date) return a.due_date.localeCompare(b.due_date);
-    if (a.scheduled_time && b.scheduled_time) return a.scheduled_time.localeCompare(b.scheduled_time);
-    if (a.scheduled_time) return -1;
-    if (b.scheduled_time) return 1;
-    return 0;
-  });
-  list.replaceChildren(...sorted.map((task) => {
-    const row = document.createElement('button');
-    row.type = 'button';
-    row.className = `today-schedule-row status-${task.status}${showDate ? ' has-date' : ''}`;
-    row.innerHTML = '<span class="today-schedule-time"></span><span class="today-schedule-title"></span><span class="today-schedule-badge"></span>';
-    const timeText = task.scheduled_time ? task.scheduled_time.slice(0, 5) : '시간 미정';
-    row.querySelector('.today-schedule-time').textContent = showDate ? `${Number(task.due_date.slice(5, 7))}/${Number(task.due_date.slice(8, 10))}(${dateMeta(task.due_date).weekday}) ${timeText}` : timeText;
-    row.querySelector('.today-schedule-title').textContent = task.title;
-    row.querySelector('.today-schedule-badge').textContent = TASK_STATUS_LABEL[task.status] || task.status;
-    row.addEventListener('click', () => {
-      const tasksNav = [...menuButtons].find((button) => button.dataset.view === 'tasks');
-      tasksNav?.click();
-      showTask(task);
+  const isAdmin = currentProfile?.role === 'admin';
+  const candidatesByDay = MessagingCore.candidatesByDay(isAdmin ? reminderCandidates.filter((candidate) => candidate.ready) : [], today, WEEK_DAY_COUNT);
+  let total = 0;
+  const cells = [...candidatesByDay.keys()].map((date, index) => {
+    const dayTasks = tasks.filter((task) => task.due_date === date).sort((a, b) => {
+      if (a.scheduled_time && b.scheduled_time) return a.scheduled_time.localeCompare(b.scheduled_time);
+      if (a.scheduled_time) return -1;
+      if (b.scheduled_time) return 1;
+      return 0;
     });
-    return row;
-  }));
+    const dayCandidates = candidatesByDay.get(date);
+    total += dayTasks.length + dayCandidates.length;
+    const cell = document.createElement('article');
+    cell.className = `week-day${index === 0 ? ' is-today' : ''}`;
+    cell.dataset.date = date;
+    const head = document.createElement('header');
+    head.className = 'week-day-head';
+    const meta = dateMeta(date);
+    head.textContent = `${index === 0 ? '오늘 · ' : index === 1 ? '내일 · ' : ''}${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}(${meta.weekday})`;
+    cell.append(head);
+    dayTasks.forEach((task) => {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = `week-item task status-${task.status}`;
+      const time = document.createElement('span');
+      time.className = 'week-item-time';
+      time.textContent = task.scheduled_time ? task.scheduled_time.slice(0, 5) : '시간 미정';
+      const title = document.createElement('span');
+      title.className = 'week-item-title';
+      title.textContent = task.title;
+      item.append(time, title);
+      item.addEventListener('click', () => {
+        [...menuButtons].find((button) => button.dataset.view === 'tasks')?.click();
+        showTask(task);
+      });
+      cell.append(item);
+    });
+    dayCandidates.forEach((candidate) => {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'week-item cand';
+      item.title = '눌러서 알림 문자 만들기';
+      const label = document.createElement('span');
+      label.className = 'week-item-time';
+      label.textContent = candidate.overdue ? '🔔 지났어요' : '🔔 알림 보낼 때예요';
+      const title = document.createElement('span');
+      title.className = 'week-item-title';
+      title.textContent = `${candidate.petName} · ${candidate.productName}`;
+      item.append(label, title);
+      item.addEventListener('click', () => msgOpenCandidate(candidate));
+      cell.append(item);
+    });
+    if (!dayTasks.length && !dayCandidates.length) {
+      const none = document.createElement('p');
+      none.className = 'week-day-none';
+      none.textContent = '일정 없음';
+      cell.append(none);
+    }
+    return cell;
+  });
+  strip.replaceChildren(...cells);
+  empty.hidden = total > 0;
+  empty.textContent = '이번 한 주에 등록된 예약·업무가 없습니다.';
 }
 
-document.querySelector('#todayScheduleTabs').addEventListener('click', (event) => {
-  const button = event.target.closest('button[data-range]');
-  if (!button) return;
-  todayScheduleRange = button.dataset.range;
+// ---------- 알림 후보(알림 4단계, 관리자 전용): 저장된 다음 알림일에서 "알림 보낼 때예요" 목록을 만든다 ----------
+let reminderCandidates = [];
+let reminderCandidatesRequest = 0;
+
+async function loadReminderCandidates() {
+  const version = ++reminderCandidatesRequest;
+  if (currentProfile?.role !== 'admin') { reminderCandidates = []; renderTodaySchedule(); msgRenderCandidates(); return; }
+  try {
+    // 서버는 한 번에 1000행까지만 주므로 apiAll로 나눠 받는다. 지난 지 오래된 알림일은 후보가 될 수 없어 읽지 않는다(접종 유예 7일 + 여유).
+    const dueRows = await apiAll(`pet_next_due?select=pet_id,product_id,due_on,sold_on&due_on=gte.${MessagingCore.addDays(getLocalDate(), -14)}&order=due_on.asc,pet_id.asc,product_id.asc`);
+    let candidates = [];
+    if (dueRows.length) {
+      const petIds = [...new Set(dueRows.map((row) => row.pet_id))].join(',');
+      const productIds = [...new Set(dueRows.map((row) => row.product_id))].join(',');
+      const [rules, pets, prefs, logs, saleRows] = await Promise.all([
+        apiAll('reminder_rules?select=product_id,kind,lead_days&product_id=not.is.null&order=id.asc'),
+        apiAll(`pets?select=id,name,owner_id&id=in.(${petIds})&order=id.asc`),
+        apiAll('owner_reminder_pref?select=owner_id,status&order=owner_id.asc'),
+        apiAll(`reminder_log?select=pet_id,kind,ref_key,due_on,status&pet_id=in.(${petIds})&status=in.(sent,skip)&order=id.asc`),
+        apiAll(`sale_items?select=id,pet_id,product_id,sales(sold_at,status)&pet_id=in.(${petIds})&product_id=in.(${productIds})&order=id.asc`)
+      ]);
+      const validPurchases = new Set();
+      saleRows.forEach((row) => {
+        // sold_at는 서버가 UTC로 돌려주므로 한국 날짜로 바꿔 판매일(sold_on)과 맞춘다(한국 시각 새벽 판매가 전날로 잘리지 않게)
+        if (row.sales && row.sales.status !== 'cancelled' && row.sales.sold_at) validPurchases.add(`${row.pet_id}:${row.product_id}:${MessagingCore.toKstDate(row.sales.sold_at)}`);
+      });
+      candidates = MessagingCore.buildCandidates({
+        today: getLocalDate(), dueRows, rules, pets, prefs, logs, validPurchases,
+        productNames: new Map(products.map((product) => [product.id, product.name]))
+      });
+    }
+    if (version !== reminderCandidatesRequest) return; // 더 최근에 시작한 불러오기가 있으면 이 결과는 버린다
+    reminderCandidates = candidates;
+    msgCandidatesFailed = false;
+  } catch {
+    if (version !== reminderCandidatesRequest) return;
+    msgCandidatesFailed = true; // 불러오지 못해도 이전 목록은 그대로 두고 안내만 한다
+  }
   renderTodaySchedule();
-});
+  msgRenderCandidates();
+}
+
+// 후보를 눌러 메시지 화면으로 간다. 재구매는 (광고) 표시와 수신거부 안내가 든 문구, 접종은 접종 안내 문구가 채워진다.
+async function msgOpenCandidate(candidate) {
+  const isVaccine = candidate.kind === 'vaccine';
+  await msgOpenWith({ petId: candidate.petId, type: isVaccine ? 'vaccine' : 'custom', dueDate: isVaccine ? candidate.dueOn : '' });
+  if (msgPetId !== candidate.petId) return; // 반려동물을 못 찾았으면 이어 가지 않는다
+  msgCandidate = { kind: candidate.kind, refKey: candidate.refKey, dueOn: candidate.dueOn };
+  if (isVaccine) {
+    msgVaccine = MSG_OTHER_VACCINE;
+    msgVaccineOther.value = candidate.productName;
+    msgVaccineOther.hidden = false;
+    msgSetPressed(msgVaccineChoices, (button) => button.dataset.vaccine === MSG_OTHER_VACCINE);
+    msgRefreshAll();
+  } else {
+    msgText.value = MessagingCore.rebuyText({ petName: msgPetName || candidate.petName, productName: candidate.productName, clinicName: msgClinicName.value.trim(), clinicPhone: msgClinicPhoneOn.checked ? msgClinicPhone.value.trim() : '' });
+    msgTextEdited = true;
+    msgRefreshAll();
+  }
+}
+
+async function msgSkipCandidate(candidate, button) {
+  if (button.disabled) return;
+  button.disabled = true;
+  let ok = false;
+  try {
+    const response = await api('rpc/rpc_log_reminder', {
+      method: 'POST',
+      body: JSON.stringify({ p_client_key: msgNewKey(), p_pet_id: candidate.petId, p_kind: candidate.kind, p_ref_key: candidate.refKey, p_due_on: candidate.dueOn, p_status: 'skip', p_message_text: null })
+    });
+    ok = response.ok;
+  } catch { ok = false; }
+  if (!ok) { button.disabled = false; msgCandidatesNote.textContent = '넘기지 못했어요. 다시 눌러 주세요.'; return; }
+  msgCandidatesNote.textContent = '';
+  reminderCandidates = reminderCandidates.filter((item) => item.key !== candidate.key); // 목록을 다시 못 불러와도 넘긴 건은 바로 빼 둔다
+  renderTodaySchedule();
+  msgRenderCandidates();
+  await loadReminderCandidates();
+  msgLoadHistory();
+}
+
+function msgRenderCandidates() {
+  if (!msgCandidatesPanel) return;
+  const isAdmin = currentProfile?.role === 'admin';
+  msgCandidatesPanel.hidden = !isAdmin;
+  if (!isAdmin) return;
+  const ready = reminderCandidates.filter((candidate) => candidate.ready);
+  msgCandidatesFailedNote.hidden = !msgCandidatesFailed;
+  msgCandidatesEmpty.hidden = ready.length > 0;
+  msgCandidatesList.replaceChildren(...ready.map((candidate) => {
+    const item = document.createElement('article');
+    item.className = 'msg-cand-item';
+    const title = document.createElement('strong');
+    title.textContent = `${candidate.petName} · ${candidate.productName}`;
+    const text = document.createElement('p');
+    text.className = 'msg-hint';
+    const [, month, day] = candidate.dueOn.split('-').map(Number);
+    text.textContent = `${MessagingCore.kindLabel(candidate.kind)} · 알림일 ${month}월 ${day}일${candidate.overdue ? ' (지났어요)' : ''}${candidate.kind === 'rebuy' ? ' · 광고로 볼 수 있어요' : ''}`;
+    const actions = document.createElement('div');
+    actions.className = 'msg-choices';
+    const send = msgMakeChoice('알림 보내기', () => { msgOpenCandidate(candidate); window.scrollTo({ top: 0, behavior: 'smooth' }); }, 'msg-cand-send');
+    const skip = msgMakeChoice('넘김', () => msgSkipCandidate(candidate, skip), 'msg-cand-skip');
+    actions.append(send, skip);
+    item.append(title, text, actions);
+    return item;
+  }));
+}
 
 document.querySelector('#dashboardNewAppointment').addEventListener('click', () => {
   const tasksNav = [...menuButtons].find((button) => button.dataset.view === 'tasks');
@@ -3633,6 +3756,7 @@ async function completeLogin(session) {
   document.querySelector('#roleBadge').dataset.role = profile?.role || '';
   await loadTasks();
   await loadDashboard();
+  loadReminderCandidates(); // 관리자만: 알림 후보(대시보드 달력·메시지 화면)
   prepareSalesHistory();
   if (profile?.role !== 'admin') {
     document.querySelector('[data-view="analytics"]').hidden = true;
@@ -4418,10 +4542,11 @@ function msgRefreshQr() {
   msgQrHint.textContent = '폰 카메라로 이 QR을 비추세요. 문자 앱이 열리면 내용을 확인하고 전송을 눌러 주세요.';
 
   // 같은 문구·반려동물·종류·날짜면 같은 기록 대상으로 보고, 바뀌면 새 대상(새 키)으로 본다.
-  const dueOn = (msgType === 'vaccine' || msgType === 'reservation') && msgDueDate.value ? msgDueDate.value : null;
-  const signature = JSON.stringify([msgPetId, msgType, dueOn, filled, MessagingCore.normalizeMobile(msgPhone.value)]); // 번호는 같은지 비교만 하고 저장하지 않는다
+  const candidate = msgCandidate; // 알림 후보에서 열었다면 그 후보와 같은 건으로 기록한다
+  const dueOn = candidate ? candidate.dueOn : (msgType === 'vaccine' || msgType === 'reservation') && msgDueDate.value ? msgDueDate.value : null;
+  const signature = JSON.stringify([msgPetId, msgType, dueOn, filled, MessagingCore.normalizeMobile(msgPhone.value), candidate ? candidate.refKey : null]); // 번호는 같은지 비교만 하고 저장하지 않는다
   if (!msgPending || msgPending.signature !== signature) {
-    msgPending = { signature, clientKey: msgNewKey(), petId: msgPetId, petLabel: msgPetLabel, type: msgType, dueOn, text: filled, logged: false, recordId: null, shownAt: Date.now() };
+    msgPending = { signature, clientKey: msgNewKey(), petId: msgPetId, petLabel: msgPetLabel, type: msgType, dueOn, text: filled, logged: false, recordId: null, shownAt: Date.now(), logKind: candidate ? candidate.kind : 'manual', logRef: candidate ? candidate.refKey : msgType };
   }
   msgSent.hidden = false;
   msgSent.disabled = msgPending.logged;
@@ -4488,6 +4613,7 @@ function msgMoveSuggestion(step) {
 
 function msgClearPet() {
   msgCapturePending(); // 기록 없이 넘어가는 문자가 있으면 "보냈나요?"를 묻는다
+  msgCandidate = null;
   msgRequestVersion += 1; // 아직 도착하지 않은 이전 응답은 무시한다
   msgPetId = null;
   msgOwnerId = null;
@@ -4583,16 +4709,17 @@ async function msgRecordSend(pending, status) {
     const response = await api('rpc/rpc_log_reminder', {
       method: 'POST',
       body: JSON.stringify({
-        p_client_key: pending.clientKey, p_pet_id: pending.petId, p_kind: 'manual', p_ref_key: pending.type,
+        p_client_key: pending.clientKey, p_pet_id: pending.petId, p_kind: pending.logKind || 'manual', p_ref_key: pending.logRef || pending.type,
         p_due_on: pending.dueOn, p_status: status, p_message_text: pending.text
       })
     });
     if (!response.ok) return false;
     const id = await response.json();
     if (status === 'sent' && pending.petId !== null && pending.petId === msgPetId) {
-      msgSentRows.unshift({ id, created_at: new Date().toISOString(), kind: 'manual', ref_key: pending.type, due_on: pending.dueOn, status, message_text: pending.text, pet_id: pending.petId });
+      msgSentRows.unshift({ id, created_at: new Date().toISOString(), kind: pending.logKind || 'manual', ref_key: pending.logRef || pending.type, due_on: pending.dueOn, status, message_text: pending.text, pet_id: pending.petId });
     }
     msgLoadHistory();
+    loadReminderCandidates(); // 보낸 후보는 목록·달력에서 바로 빠진다
     return id || true;
   } catch { return false; }
 }
@@ -5147,6 +5274,7 @@ function msgInit() {
       msgStopSpeak();
       const previous = msgType;
       msgType = type.id;
+      msgCandidate = null; // 종류를 바꾸면 후보와 연결된 기록이 아니다
       if (previous !== 'custom' && type.id === 'custom') {
         msgText.value = MessagingCore.tokenize(msgText.value, { petName: msgPetName, dueDate: msgDueDate.value, today: getLocalDate() });
         msgTextEdited = true;
@@ -5281,6 +5409,7 @@ function msgInit() {
     msgLoadHistory();
     msgLoadPrefList();
     msgRulesPanel.hidden = currentProfile?.role !== 'admin'; // 알림 주기 설정은 관리자만 본다
+    loadReminderCandidates();
     saleRulesLoaded = false; saleRulesTried = false; renderSaleDue(); // 설정 화면에서 규칙을 고칠 수 있으니 판매 화면 규칙을 바로 다시 불러온다(담아 둔 목록이 있어도 저장이 빠지지 않게)
     if (!msgRulesPanel.hidden) msgLoadRules();
   });
