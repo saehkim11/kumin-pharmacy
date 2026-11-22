@@ -3719,12 +3719,22 @@ async function showTask(task) {
 
 const SESSION_STORAGE_KEY = 'pharmacy-session';
 
+// "로그인 유지"를 켜 두면(기본) 새로고침·브라우저 종료·컴퓨터 재부팅 뒤에도 로그인이 이어진다. 끄면 이 창을 닫을 때까지만 유지된다.
+const KEEP_LOGIN_KEY = 'pharmacy-keep-login';
+function keepLoginOn() {
+  try { return localStorage.getItem(KEEP_LOGIN_KEY) !== '0'; } catch { return true; }
+}
 function saveSession(session) {
-  try { localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({ refresh_token: session.refresh_token })); } catch {}
+  const value = JSON.stringify({ refresh_token: session.refresh_token });
+  try {
+    if (keepLoginOn()) { localStorage.setItem(SESSION_STORAGE_KEY, value); sessionStorage.removeItem(SESSION_STORAGE_KEY); }
+    else { sessionStorage.setItem(SESSION_STORAGE_KEY, value); localStorage.removeItem(SESSION_STORAGE_KEY); }
+  } catch {}
 }
 
 function clearSession() {
   try { localStorage.removeItem(SESSION_STORAGE_KEY); } catch {}
+  try { sessionStorage.removeItem(SESSION_STORAGE_KEY); } catch {}
 }
 
 async function signOut() {
@@ -3797,7 +3807,7 @@ async function completeLogin(session) {
 
 async function restoreSession() {
   let saved;
-  try { saved = JSON.parse(localStorage.getItem(SESSION_STORAGE_KEY) || 'null'); } catch { saved = null; }
+  try { saved = JSON.parse(localStorage.getItem(SESSION_STORAGE_KEY) || sessionStorage.getItem(SESSION_STORAGE_KEY) || 'null'); } catch { saved = null; }
   if (!saved?.refresh_token || !hasConfig()) return;
   try {
     const auth = await fetch(`${config.supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
@@ -3819,6 +3829,7 @@ loginButton.addEventListener('click', () => {
     return;
   }
   if (!hasConfig()) { document.querySelector('#loginMessage').textContent = '연결 설정을 확인할 수 없습니다. 관리자에게 문의해 주세요.'; loginDialog.showModal(); return; }
+  document.querySelector('#keepLogin').checked = keepLoginOn();
   loginDialog.showModal();
 });
 document.querySelector('#closeLogin').addEventListener('click', () => loginDialog.close());
@@ -4211,6 +4222,7 @@ document.querySelector('#loginForm').addEventListener('submit', async (event) =>
   try {
     const email = document.querySelector('#email').value;
     const password = document.querySelector('#password').value;
+    try { localStorage.setItem(KEEP_LOGIN_KEY, document.querySelector('#keepLogin').checked ? '1' : '0'); } catch {}
     const auth = await fetch(`${config.supabaseUrl}/auth/v1/token?grant_type=password`, { method: 'POST', headers: { apikey: config.supabasePublishableKey, 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
     if (!auth.ok) throw new Error('이메일 또는 비밀번호를 확인하세요.');
     const session = await auth.json();
@@ -4391,6 +4403,8 @@ const msgText = document.querySelector('#msgText');
 const msgTokenButtons = document.querySelector('#msgTokenButtons');
 const msgSpeak = document.querySelector('#msgSpeak');
 const msgSpeakHint = document.querySelector('#msgSpeakHint');
+const msgPetSpeak = document.querySelector('#msgPetSpeak');
+const msgPetSpeakHint = document.querySelector('#msgPetSpeakHint');
 const msgSavePhrase = document.querySelector('#msgSavePhrase');
 const msgSavedPhrases = document.querySelector('#msgSavedPhrases');
 const msgCounter = document.querySelector('#msgCounter');
@@ -4562,7 +4576,7 @@ function msgUpdateTypeUi() {
   msgTimeStep.hidden = msgType !== 'reservation';
   msgTokenButtons.hidden = msgType !== 'custom';
   msgSavePhrase.hidden = msgType !== 'custom';
-  msgSpeak.hidden = msgType !== 'custom' || !MsgSpeechRecognition;
+  msgSpeak.hidden = !MsgSpeechRecognition; // 문구는 어떤 종류에서도 고칠 수 있으니 말로도 넣을 수 있게 한다
   msgSpeakHint.hidden = msgSpeak.hidden;
   msgSavedPhrases.hidden = msgType !== 'custom' || !msgSavedPhrases.childElementCount;
   msgSetPressed(msgTypeChoices, (button) => button.dataset.type === msgType);
@@ -5008,17 +5022,36 @@ let msgRecognition = null;
 function msgStopSpeak() {
   if (msgRecognition) { try { msgRecognition.stop(); } catch { /* 이미 멈춘 상태 */ } }
 }
-function msgToggleSpeak() {
-  if (msgRecognition) return msgStopSpeak();
+// 버튼 하나로 말하기를 켜고 끈다. 반려동물 검색(한 번 말하면 끝)과 문구(계속 받아 적기)가 함께 쓴다.
+function msgListen({ button, idleLabel, continuous, onSpoken, onError }) {
+  const wasThis = msgRecognition && msgRecognition.button === button;
+  msgStopSpeak();
+  if (wasThis) return;
   const recognition = new MsgSpeechRecognition();
+  recognition.button = button;
   recognition.lang = 'ko-KR';
-  recognition.continuous = true;
+  recognition.continuous = continuous;
   recognition.interimResults = false;
+  const reset = () => { button.textContent = idleLabel; button.setAttribute('aria-pressed', 'false'); };
   recognition.onresult = (event) => {
     for (let i = event.resultIndex; i < event.results.length; i += 1) {
       if (!event.results[i].isFinal) continue;
       const spoken = event.results[i][0].transcript.trim();
-      if (!spoken) continue;
+      if (spoken) onSpoken(spoken);
+    }
+  };
+  recognition.onerror = () => onError('마이크를 쓸 수 없어요. 글자로 입력해 주세요.');
+  recognition.onend = () => { if (msgRecognition === recognition) msgRecognition = null; reset(); }; // 다른 버튼이 이미 이어받았으면 건드리지 않는다
+  msgRecognition = recognition;
+  button.textContent = '🎤 듣는 중… (누르면 멈춤)';
+  button.setAttribute('aria-pressed', 'true');
+  try { recognition.start(); } catch { msgRecognition = null; reset(); }
+}
+function msgToggleSpeak() {
+  msgListen({
+    button: msgSpeak, idleLabel: '🎤 말하기', continuous: true,
+    onError: (message) => { msgQrHint.textContent = message; },
+    onSpoken: (spoken) => {
       const start = msgText.selectionStart ?? msgText.value.length;
       const end = msgText.selectionEnd ?? start;
       const needsSpace = start > 0 && !/\s$/.test(msgText.value.slice(0, start));
@@ -5026,15 +5059,23 @@ function msgToggleSpeak() {
       msgText.value = inserted.text;
       msgText.setSelectionRange(inserted.caret, inserted.caret);
       msgTextEdited = true;
+      msgRefreshQr();
     }
-    msgRefreshQr();
-  };
-  recognition.onerror = () => { msgQrHint.textContent = '마이크를 쓸 수 없어요. 글자로 입력해 주세요.'; };
-  recognition.onend = () => { msgRecognition = null; msgSpeak.textContent = '🎤 말하기'; msgSpeak.setAttribute('aria-pressed', 'false'); };
-  msgRecognition = recognition;
-  msgSpeak.textContent = '🎤 듣는 중… (누르면 멈춤)';
-  msgSpeak.setAttribute('aria-pressed', 'true');
-  try { recognition.start(); } catch { msgRecognition = null; msgSpeak.textContent = '🎤 말하기'; msgSpeak.setAttribute('aria-pressed', 'false'); }
+  });
+}
+// 반려동물 이름을 말하면 검색칸에 넣고 추천 목록을 띄운다(고르는 것은 눌러서).
+function msgTogglePetSpeak() {
+  msgListen({
+    button: msgPetSpeak, idleLabel: '🎤 말로 찾기', continuous: false,
+    onError: (message) => { msgPetSpeakHint.textContent = message; msgPetSpeakHint.hidden = false; },
+    onSpoken: (spoken) => {
+      const name = spoken.replace(/[\s.,!?。]+/g, ' ').trim();
+      msgPetSpeakHint.hidden = true;
+      msgPetSearch.value = name;
+      msgPetSearch.dispatchEvent(new Event('input', { bubbles: true })); // 직접 친 것과 같게 처리한다
+      msgPetSearch.focus();
+    }
+  });
 }
 
 // ---------- 알림 주기 설정(알림 2단계): 며칠마다 다시 필요한지 약(상품)별로 정해 저장한다 ----------
@@ -5316,7 +5357,11 @@ function msgInit() {
   msgRenderSavedPhrases();
   msgUpdateTypeUi();
 
-  if (MsgSpeechRecognition) msgSpeak.addEventListener('click', msgToggleSpeak); // 보이는 것은 msgUpdateTypeUi가 정한다(직접 쓰기에서만)
+  if (MsgSpeechRecognition) {
+    msgSpeak.addEventListener('click', msgToggleSpeak);
+    msgPetSpeak.hidden = false; // 음성 인식을 못 쓰는 브라우저에서는 버튼을 보이지 않는다
+    msgPetSpeak.addEventListener('click', msgTogglePetSpeak);
+  }
 
   msgPetSearch.addEventListener('focus', () => msgRenderSuggestions(msgPetSearch.value));
   msgPetSearch.addEventListener('input', () => {
