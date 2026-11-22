@@ -46,6 +46,7 @@ let salesHistoryView = 'daily';
 let dashboardNewsLoaded = false;
 
 const saleProductSearch = document.querySelector('#saleProductSearch');
+const saleProductMicButton = document.querySelector('#saleProductMicButton');
 const saleProductValue = document.querySelector('#saleProduct');
 const saleProductSuggestions = document.querySelector('#saleProductSuggestions');
 const saleProductHint = document.querySelector('#saleProductHint');
@@ -63,6 +64,22 @@ const salesHistorySection = document.querySelector('#salesHistorySection');
 const petPurchaseRows = document.querySelector('#petPurchaseRows');
 const petPurchaseEmpty = document.querySelector('#petPurchaseEmpty');
 let salePetDirectory = new Map(); // label(이름(보호자)) -> pet_id, 판매 등록 시 반려동물 연결용
+const saleNextDue = document.querySelector('#saleNextDue');
+const saleConsent = document.querySelector('#saleConsent');
+const saleConsentCheck = document.querySelector('#saleConsentCheck');
+const saleConsentStatus = document.querySelector('#saleConsentStatus');
+let saleRules = new Map(); // 상품 번호 -> 알림 규칙(관리자만 불러온다)
+let saleRulesLoaded = false;
+let saleRulesLoading = false;
+let saleRulesTried = false;
+const saleDue = new Map(); // "반려동물:상품" -> { mode: 'manual' | 'none', dueOn } (정하지 않으면 자동 계산)
+const saleDueNotes = new Map();
+const saleDueOpenCustom = new Set();
+const saleDueBusy = new Set();
+let saleConsentRequest = 0;
+let saleConsentOwner = null;
+let saleConsentPref = null;
+let saleConsentSaving = false;
 
 async function loadSalePetOptions() {
   try {
@@ -84,6 +101,7 @@ async function loadSalePetOptions() {
 let salePetHistoryVersion = 0;
 async function updateSalePetHistory() {
   const requestVersion = ++salePetHistoryVersion;
+  updateSaleConsent();
   const label = salePetSearch.value.trim();
   const petId = label ? salePetDirectory.get(label) : null;
   if (!petId) {
@@ -189,6 +207,27 @@ async function loadPetVisitSuggestions() {
 }
 
 const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+let saleProductRecognition = null;
+if (SpeechRecognitionCtor) {
+  saleProductRecognition = new SpeechRecognitionCtor();
+  saleProductRecognition.lang = 'ko-KR';
+  saleProductRecognition.interimResults = false;
+  saleProductRecognition.maxAlternatives = 1;
+  saleProductRecognition.addEventListener('result', (event) => {
+    const text = event.results[0][0].transcript.trim();
+    saleProductSearch.value = text;
+    saleProductValue.value = '';
+    renderProductSuggestions(text);
+  });
+  saleProductRecognition.addEventListener('end', () => saleProductMicButton.classList.remove('listening'));
+  saleProductRecognition.addEventListener('error', (event) => {
+    saleProductMicButton.classList.remove('listening');
+    saleProductHint.textContent = event.error === 'not-allowed' ? '마이크 사용을 허용해 주세요.' : '음성 인식에 실패했습니다. 다시 누르거나 직접 입력해 주세요.';
+  });
+} else {
+  saleProductMicButton.title = '이 브라우저는 음성 인식을 지원하지 않습니다. 직접 입력해 주세요.';
+}
+
 let petRecognition = null;
 if (SpeechRecognitionCtor) {
   petRecognition = new SpeechRecognitionCtor();
@@ -2678,10 +2717,257 @@ function renderSale() {
   document.querySelector('#saleTableWrap').hidden = saleItems.length === 0;
   document.querySelector('#saleFooter').hidden = saleItems.length === 0;
   document.querySelector('#saleTotal').textContent = `합계 ${total.toLocaleString('ko-KR')}원`;
+  renderSaleDue();
 }
+
+// ---------- 판매 화면: 다음 알림일·처음 정하기·수신 동의 (관리자 전용, 알림 3단계) ----------
+function saleDueKey(petId, productId) { return `${petId}:${productId}`; }
+
+async function ensureSaleRules() {
+  if (saleRulesLoaded || saleRulesLoading || currentProfile?.role !== 'admin') return;
+  saleRulesLoading = true;
+  saleRulesTried = true;
+  try {
+    const response = await api('reminder_rules?select=product_id,kind,interval_days,lead_days&product_id=not.is.null');
+    if (response.ok) {
+      saleRules = new Map((await response.json()).map((rule) => [rule.product_id, rule]));
+      saleRulesLoaded = true;
+    }
+  } catch { /* 불러오지 못해도 판매 등록은 그대로 된다 */ }
+  saleRulesLoading = false;
+  renderSaleDue();
+}
+
+function saleDueAppend(parent, tag, className, text) {
+  const element = document.createElement(tag);
+  element.className = className;
+  if (text !== undefined) element.textContent = text;
+  parent.append(element);
+  return element;
+}
+
+async function saveSaleRule(key, productId, kind, intervalDays) {
+  const busyKey = `r:${productId}`;
+  if (saleDueBusy.has(busyKey)) return; // 연타해도 한 번만 저장한다
+  saleDueBusy.add(busyKey);
+  try {
+    const ok = await msgSaveRule({ productId, kind, intervalDays, leadDays: MessagingCore.DEFAULT_LEAD_DAYS });
+    if (ok) {
+      saleRules.set(productId, { product_id: productId, kind, interval_days: intervalDays, lead_days: MessagingCore.DEFAULT_LEAD_DAYS });
+      saleDueNotes.delete(key);
+      saleDueOpenCustom.delete(productId);
+    } else saleDueNotes.set(key, '저장하지 못했어요. 다시 눌러 주세요.');
+  } finally { saleDueBusy.delete(busyKey); }
+  renderSaleDue();
+}
+
+function buildSaleDueBlock(key, petId, productId, quantity, item) {
+  const block = document.createElement('article');
+  block.className = 'sale-due-item';
+  block.dataset.petId = petId;
+  block.dataset.productId = productId;
+  saleDueAppend(block, 'strong', 'sale-due-name', `${item.name} · ${item.petLabel}`);
+  const soldOn = saleDate.value;
+  const rule = saleRules.get(productId);
+  const state = saleDue.get(key);
+  const text = saleDueAppend(block, 'p', 'sale-due-text');
+  const actions = saleDueAppend(block, 'div', 'msg-choices sale-due-actions');
+  const note = saleDueAppend(block, 'p', 'msg-hint sale-due-note', saleDueNotes.get(key) || '');
+  const addNone = () => actions.append(msgMakeChoice('알림 안 함', () => { saleDue.set(key, { mode: 'none', dueOn: null }); renderSaleDue(); }, 'sale-due-none'));
+  if (state && state.mode === 'none') {
+    text.textContent = '이 상품은 알림을 보내지 않아요.';
+    actions.append(msgMakeChoice('다시 정하기', () => { saleDue.delete(key); renderSaleDue(); }, 'sale-due-reset'));
+    return block;
+  }
+  if (!rule) {
+    text.textContent = '이 상품 1개로 며칠 쓰나요? 한 번 정해 두면 다음부터 자동으로 계산해요.';
+    MessagingCore.UNIT_DAY_PRESETS.forEach((days) => {
+      const button = msgMakeChoice(`${days}일`, () => saveSaleRule(key, productId, 'rebuy', days), 'sale-due-unit');
+      button.dataset.days = String(days);
+      actions.append(button);
+    });
+    actions.append(msgMakeChoice('직접 입력', () => { saleDueOpenCustom.add(productId); renderSaleDue(); }, 'sale-due-custom'));
+    saleDueAppend(block, 'p', 'msg-hint', '접종처럼 정해진 간격이면:');
+    const fixed = saleDueAppend(block, 'div', 'msg-choices sale-due-actions');
+    MessagingCore.FIXED_PRESETS.forEach((preset) => {
+      const button = msgMakeChoice(preset.label, () => saveSaleRule(key, productId, 'vaccine', preset.days), 'sale-due-fixed');
+      button.dataset.days = String(preset.days);
+      fixed.append(button);
+    });
+    if (saleDueOpenCustom.has(productId)) {
+      const row = saleDueAppend(block, 'div', 'sale-due-custom-row');
+      const input = document.createElement('input');
+      input.type = 'text'; input.inputMode = 'numeric'; input.maxLength = 4; input.autocomplete = 'off';
+      input.className = 'sale-due-custom-input'; input.placeholder = '며칠';
+      row.append('이 상품 1개로 ', input, ' 일 ');
+      row.append(msgMakeChoice('확인', () => {
+        const parsed = MessagingCore.parseRuleInput({ intervalText: input.value, leadText: '' });
+        if (!parsed.ok || parsed.intervalDays === null) { note.textContent = parsed.ok ? '며칠인지 숫자를 넣어 주세요.' : parsed.error; return; }
+        saveSaleRule(key, productId, 'rebuy', parsed.intervalDays);
+      }, 'sale-due-custom-ok'));
+    }
+    addNone();
+    return block;
+  }
+  // 규칙이 있는 상품: 다음 알림일을 자동 계산하고 고칠 수 있다.
+  const auto = MessagingCore.calcNextDue({ kind: rule.kind, intervalDays: rule.interval_days, quantity, soldOn });
+  let dueOn = '';
+  if (state && state.mode === 'manual') { dueOn = state.dueOn; text.textContent = '날짜를 직접 정했어요.'; }
+  else if (auto.ok) {
+    dueOn = auto.dueOn;
+    text.textContent = `다음 알림일: ${MessagingCore.nextDueText({ kind: rule.kind, intervalDays: rule.interval_days, quantity, soldOn })}`;
+  } else text.textContent = auto.reason === 'too-far' ? '계산한 날짜가 너무 멀어요. 날짜를 직접 골라 주세요.' : '날짜를 계산하지 못했어요. 날짜를 직접 골라 주세요.';
+  const dateInput = document.createElement('input');
+  dateInput.type = 'date';
+  dateInput.className = 'sale-due-date';
+  dateInput.min = soldOn;
+  dateInput.max = MessagingCore.addDays(soldOn, MessagingCore.MAX_NEXT_DUE_DAYS);
+  dateInput.value = dueOn;
+  dateInput.setAttribute('aria-label', `${item.name} 다음 알림일`);
+  dateInput.addEventListener('change', () => {
+    const value = dateInput.value;
+    if (!value || value < dateInput.min || value > dateInput.max) { note.textContent = '판매일 이후의 날짜를 골라 주세요.'; dateInput.value = dueOn; return; }
+    saleDue.set(key, { mode: 'manual', dueOn: value });
+    saleDueNotes.delete(key);
+    renderSaleDue();
+  });
+  const dateLabel = document.createElement('label');
+  dateLabel.className = 'sale-due-date-label';
+  dateLabel.append('날짜 고치기 ', dateInput);
+  actions.append(dateLabel);
+  if (rule.kind === 'vaccine') {
+    MessagingCore.FIXED_PRESETS.forEach((preset) => {
+      const button = msgMakeChoice(`${preset.label} 후`, () => { saleDue.set(key, { mode: 'manual', dueOn: MessagingCore.addDays(soldOn, preset.days) }); saleDueNotes.delete(key); renderSaleDue(); }, 'sale-due-fixed');
+      button.dataset.days = String(preset.days);
+      actions.append(button);
+    });
+  }
+  addNone();
+  return block;
+}
+
+function renderSaleDue() {
+  const sums = MessagingCore.sumQuantity(saleItems.map((item) => ({ productId: item.id, petId: item.petId, quantity: item.quantity })));
+  [...saleDue.keys()].forEach((key) => { if (!sums.has(key)) saleDue.delete(key); });
+  [...saleDueNotes.keys()].forEach((key) => { if (!sums.has(key)) saleDueNotes.delete(key); });
+  if (currentProfile?.role !== 'admin' || sums.size === 0) { saleNextDue.hidden = true; saleNextDue.replaceChildren(); return; }
+  saleNextDue.hidden = false;
+  if (!saleRulesLoaded) {
+    const wait = document.createElement('p');
+    wait.className = 'msg-hint';
+    wait.textContent = saleRulesTried && !saleRulesLoading ? '알림 설정을 불러오지 못했어요. 판매는 그대로 등록할 수 있어요.' : '알림 설정을 불러오는 중이에요…';
+    saleNextDue.replaceChildren(wait);
+    if (!saleRulesTried && !saleRulesLoading) ensureSaleRules();
+    return;
+  }
+  const soldOn = saleDate.value;
+  const max = soldOn ? MessagingCore.addDays(soldOn, MessagingCore.MAX_NEXT_DUE_DAYS) : '';
+  const blocks = [];
+  const title = document.createElement('h3');
+  title.className = 'msg-history-sub';
+  title.textContent = '다음 알림일 (반려동물에게 팔 때만 나와요)';
+  blocks.push(title);
+  sums.forEach((quantity, key) => {
+    const [petId, productId] = key.split(':').map(Number);
+    const item = saleItems.find((row) => row.id === productId && row.petId === petId);
+    if (!item) return;
+    const state = saleDue.get(key);
+    if (state && state.mode === 'manual' && soldOn && (state.dueOn < soldOn || state.dueOn > max)) {
+      saleDue.delete(key);
+      saleDueNotes.set(key, '판매일이 바뀌어 날짜를 다시 계산했어요.');
+    }
+    blocks.push(buildSaleDueBlock(key, petId, productId, quantity, item));
+  });
+  saleNextDue.replaceChildren(...blocks);
+}
+
+// 판매가 성공한 뒤 저장할 다음 알림일 목록(알림 안 함·규칙 없음은 뺀다)
+function collectSaleNextDue(soldOn) {
+  const jobs = [];
+  if (currentProfile?.role !== 'admin' || !saleRulesLoaded) return jobs;
+  MessagingCore.sumQuantity(saleItems.map((item) => ({ productId: item.id, petId: item.petId, quantity: item.quantity }))).forEach((quantity, key) => {
+    const state = saleDue.get(key);
+    if (state && state.mode === 'none') return;
+    const [petId, productId] = key.split(':').map(Number);
+    const rule = saleRules.get(productId);
+    if (!rule) return;
+    if (state && state.mode === 'manual') { jobs.push({ petId, productId, dueOn: state.dueOn, source: 'manual' }); return; }
+    const auto = MessagingCore.calcNextDue({ kind: rule.kind, intervalDays: rule.interval_days, quantity, soldOn });
+    if (auto.ok) jobs.push({ petId, productId, dueOn: auto.dueOn, source: 'auto' });
+  });
+  return jobs;
+}
+
+// 판매 결과를 바꾸지 않는다: 실패해도 던지지 않고 개수만 돌려준다.
+async function saveSaleNextDue(jobs, soldOn) {
+  let failed = 0;
+  for (const job of jobs) {
+    try {
+      const response = await api('rpc/rpc_set_next_due', { method: 'POST', body: JSON.stringify({ p_pet_id: job.petId, p_product_id: job.productId, p_due_on: job.dueOn, p_sold_on: soldOn, p_source: job.source }) });
+      if (!response.ok) failed += 1;
+    } catch { failed += 1; }
+  }
+  return { saved: jobs.length - failed, failed };
+}
+
+function renderSaleConsent() {
+  const pref = saleConsentPref;
+  saleConsentCheck.checked = Boolean(pref && pref.status === 'consented');
+  saleConsentCheck.disabled = saleConsentSaving || saleConsentOwner === null || Boolean(pref && pref.status === 'optout');
+  saleConsentStatus.textContent = MessagingCore.prefLabel(pref) + (pref && pref.status === 'optout' ? ' 바꾸려면 메시지 발송 화면에서 고쳐 주세요.' : '');
+}
+
+async function updateSaleConsent() {
+  const version = ++saleConsentRequest;
+  saleConsentOwner = null;
+  saleConsentPref = null;
+  const label = salePetSearch.value.trim();
+  const petId = label ? salePetDirectory.get(label) : null;
+  if (currentProfile?.role !== 'admin' || !petId) { saleConsent.hidden = true; return; }
+  saleConsent.hidden = false;
+  saleConsentCheck.checked = false;
+  saleConsentCheck.disabled = true;
+  saleConsentStatus.textContent = '확인하는 중이에요…';
+  try {
+    const ownerResponse = await api(`pets?select=owner_id&id=eq.${petId}`);
+    const owner = ownerResponse.ok ? (await ownerResponse.json())[0] : null;
+    if (version !== saleConsentRequest) return;
+    if (!owner) throw new Error('owner');
+    const prefResponse = await api(`owner_reminder_pref?select=status,status_on,method&owner_id=eq.${owner.owner_id}`);
+    if (!prefResponse.ok) throw new Error('pref');
+    const pref = (await prefResponse.json())[0] || null;
+    if (version !== saleConsentRequest) return; // 그 사이 다른 반려동물을 골랐으면 늦게 온 응답은 버린다
+    saleConsentOwner = owner.owner_id;
+    saleConsentPref = pref;
+    renderSaleConsent();
+  } catch {
+    if (version === saleConsentRequest) saleConsentStatus.textContent = '확인하지 못했어요. 반려동물을 다시 골라 주세요.';
+  }
+}
+
+saleConsentCheck.addEventListener('change', async () => {
+  const owner = saleConsentOwner;
+  if (owner === null || saleConsentSaving) return;
+  const want = saleConsentCheck.checked;
+  saleConsentSaving = true;
+  saleConsentCheck.disabled = true;
+  let ok = false;
+  try {
+    const response = await api('rpc/rpc_set_reminder_pref', { method: 'POST', body: JSON.stringify({ p_owner_id: owner, p_status: want ? 'consented' : null, p_method: want ? '구두' : null, p_note: null }) });
+    ok = response.ok;
+  } catch { ok = false; }
+  saleConsentSaving = false;
+  if (owner !== saleConsentOwner) { renderSaleConsent(); return; } // 저장하는 사이 다른 반려동물로 바뀌었으면 결과는 반영하지 않고, 새 반려동물 체크 칸만 풀어 준다
+  if (ok) saleConsentPref = want ? { status: 'consented', status_on: getLocalDate(), method: '구두' } : null;
+  renderSaleConsent();
+  if (!ok) saleConsentStatus.textContent = '저장하지 못했어요. 다시 눌러 주세요.';
+});
+
+saleDate.addEventListener('change', renderSaleDue);
 
 function prepareSales() {
   saleProductSearch.disabled = false;
+  saleProductMicButton.disabled = !saleProductRecognition;
   saleProductValue.value = '';
   saleProductSearch.value = '';
   saleProductHint.textContent = '상품명·코드·초성을 입력하거나 입력창을 눌러 추천 상품을 확인하세요.';
@@ -3118,7 +3404,10 @@ function makeCommentBubble(taskId) {
 }
 
 async function loadTasks() {
-  const response = await api('action_tasks?select=id,title,description,status,priority,due_date,scheduled_time,created_by,created_at,task_assignees(user_id)&order=due_date.asc');
+  const taskColumns = 'id,title,description,status,priority,due_date,scheduled_time,created_by,created_at,task_assignees(user_id)';
+  // 반려동물 연결 정보(pet_id)까지 읽는다. 아직 그 열이 없는 환경이면 기존 열만으로 한 번 더 읽어 업무 화면이 깨지지 않게 한다.
+  let response = await api(`action_tasks?select=${taskColumns},pet_id,pet:pets(id,name,owner:owners(name))&order=due_date.asc`);
+  if (!response.ok) response = await api(`action_tasks?select=${taskColumns}&order=due_date.asc`);
   if (!response.ok) return;
   tasks = await response.json();
   try {
@@ -3189,6 +3478,7 @@ function renderCalendar() {
         document.querySelector('#taskDetailTitle').textContent = '업무를 선택하세요';
         document.querySelector('#taskDetailMeta').textContent = `${date}에는 등록된 업무가 없습니다.`;
         document.querySelector('#taskStatusControls').hidden = true;
+        showTaskPet(null);
         document.querySelector('#commentForm').hidden = true;
         document.querySelector('#commentList').replaceChildren();
         document.querySelector('#commentBody').value = '';
@@ -3222,6 +3512,19 @@ function setTaskActionMessage(text) {
   message.textContent = text;
 }
 
+// 업무에 연결된 반려동물을 상세에 보인다. 알림 버튼은 관리자에게만, 반려동물이 연결된 업무에서만 보인다.
+function showTaskPet(task) {
+  const petLine = document.querySelector('#taskDetailPet');
+  const notify = document.querySelector('#taskDetailNotify');
+  if (task && task.pet) {
+    petLine.textContent = `연결된 반려동물: ${task.pet.name}${task.pet.owner && task.pet.owner.name ? ` (${task.pet.owner.name})` : ''}`;
+    petLine.hidden = false;
+  } else {
+    petLine.hidden = true;
+  }
+  notify.hidden = !(currentProfile?.role === 'admin' && task && task.pet);
+}
+
 async function showTask(task) {
   const requestVersion = ++taskDetailVersion;
   const input = document.querySelector('#commentBody');
@@ -3235,6 +3538,7 @@ async function showTask(task) {
   document.querySelectorAll('#taskDayList button').forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.taskId === String(task.id))));
   document.querySelector('#taskDetailTitle').textContent = task.title;
   document.querySelector('#taskDetailMeta').textContent = `${task.due_date || '마감일 없음'} · ${task.priority === 'high' ? '높은 우선순위' : '일반 우선순위'}${task.description ? ` · ${task.description}` : ''}`;
+  showTaskPet(task);
   const controls = document.querySelector('#taskStatusControls');
   const assigned = task.task_assignees?.some((item) => item.user_id === currentUser.id);
   controls.hidden = !(currentProfile?.role === 'admin' || assigned);
@@ -3537,6 +3841,12 @@ saleProductSearch.addEventListener('input', () => {
   saleProductValue.value = '';
   renderProductSuggestions(saleProductSearch.value);
 });
+saleProductMicButton.addEventListener('click', () => {
+  if (!saleProductRecognition) return;
+  saleProductMicButton.classList.add('listening');
+  saleProductHint.textContent = '듣는 중... 상품 이름을 말씀해 주세요.';
+  try { saleProductRecognition.start(); } catch { saleProductMicButton.classList.remove('listening'); }
+});
 saleProductSearch.addEventListener('keydown', (event) => {
   if (event.key === 'ArrowDown') { event.preventDefault(); if (saleProductSuggestions.hidden) renderProductSuggestions(saleProductSearch.value); moveSuggestion(1); }
   if (event.key === 'ArrowUp') { event.preventDefault(); if (saleProductSuggestions.hidden) renderProductSuggestions(saleProductSearch.value); moveSuggestion(-1); }
@@ -3600,6 +3910,94 @@ document.querySelector('#commentForm').addEventListener('submit', async (event) 
     if (selectedTask?.id === task.id) setTaskActionMessage('댓글 저장 결과를 확인하지 못했습니다. 입력한 내용은 보관했습니다. 업무를 다시 선택해 등록 여부를 확인하세요.');
   } finally { button.disabled = false; }
 });
+// ---- 업무 등록 폼: 반려동물 고르기(판매 관리와 같은 초성 검색 + 카드 클릭) ----
+const newTaskPetSearch = document.querySelector('#newTaskPetSearch');
+const newTaskPetSuggestions = document.querySelector('#newTaskPetSuggestions');
+const newTaskPetId = document.querySelector('#newTaskPetId');
+let newTaskPetLabel = '';
+let newTaskPetPrefill = ''; // 제목에 미리 채워 둔 "이름 (보호자) " — 직접 고치지 않은 부분만 반려동물에 따라 바꾼다
+let newTaskPetActive = -1;
+
+function setTaskTitlePrefill(label) {
+  const title = document.querySelector('#newTaskTitle');
+  const next = label ? `${MessagingCore.plainPetLabel(label)} ` : '';
+  if (!title.value.trim()) title.value = next;
+  else if (newTaskPetPrefill && title.value.startsWith(newTaskPetPrefill)) title.value = next + title.value.slice(newTaskPetPrefill.length);
+  newTaskPetPrefill = next && title.value.startsWith(next) ? next : '';
+}
+
+function closeTaskPetSuggestions() {
+  newTaskPetActive = -1;
+  newTaskPetSuggestions.hidden = true;
+  newTaskPetSearch.setAttribute('aria-expanded', 'false');
+  newTaskPetSearch.removeAttribute('aria-activedescendant');
+}
+function selectTaskPet(label) {
+  const petId = salePetDirectory.get(label);
+  if (!petId) return;
+  newTaskPetSearch.value = label;
+  newTaskPetLabel = label;
+  newTaskPetId.value = String(petId);
+  closeTaskPetSuggestions();
+  setTaskTitlePrefill(label); // 이름을 다시 치지 않도록 제목을 미리 채운다
+}
+function renderTaskPetSuggestions(keyword = '') {
+  if (!salePetDirectory.size) loadSalePetOptions().then(() => { if (document.activeElement === newTaskPetSearch) renderTaskPetSuggestions(newTaskPetSearch.value); });
+  const labels = [...salePetDirectory.keys()].sort((a, b) => a.localeCompare(b, 'ko'));
+  const matched = (keyword.trim() ? labels.filter((label) => matchesKoreanText(label, keyword)) : labels).slice(0, 8);
+  newTaskPetActive = -1;
+  newTaskPetSuggestions.replaceChildren();
+  newTaskPetSearch.setAttribute('aria-expanded', 'true');
+  if (!matched.length) {
+    const empty = document.createElement('p');
+    empty.className = 'suggestion-empty';
+    empty.textContent = '일치하는 반려동물이 없습니다. 이름이나 초성을 다시 입력해 주세요.';
+    newTaskPetSuggestions.append(empty);
+  }
+  matched.forEach((label, index) => {
+    const option = document.createElement('button');
+    option.type = 'button';
+    option.className = 'product-suggestion';
+    option.id = `task-pet-option-${index}`;
+    option.setAttribute('role', 'option');
+    option.textContent = label;
+    option.addEventListener('mousedown', (event) => event.preventDefault());
+    option.addEventListener('click', () => selectTaskPet(label));
+    newTaskPetSuggestions.append(option);
+  });
+  newTaskPetSuggestions.hidden = false;
+}
+function moveTaskPetSuggestion(step) {
+  const options = [...newTaskPetSuggestions.querySelectorAll('.product-suggestion')];
+  if (!options.length) return;
+  newTaskPetActive = newTaskPetActive < 0 ? (step > 0 ? 0 : options.length - 1) : (newTaskPetActive + step + options.length) % options.length;
+  options.forEach((option, index) => option.classList.toggle('active', index === newTaskPetActive));
+  newTaskPetSearch.setAttribute('aria-activedescendant', options[newTaskPetActive].id);
+  options[newTaskPetActive].scrollIntoView({ block: 'nearest' });
+}
+newTaskPetSearch.addEventListener('focus', () => renderTaskPetSuggestions(newTaskPetSearch.value));
+newTaskPetSearch.addEventListener('input', () => {
+  if (newTaskPetSearch.value !== newTaskPetLabel) { // 고른 뒤 글자를 고치면 이전 반려동물 번호와 미리 채운 제목의 이름은 버린다
+    if (newTaskPetLabel) setTaskTitlePrefill('');
+    newTaskPetLabel = '';
+    newTaskPetId.value = '';
+  }
+  renderTaskPetSuggestions(newTaskPetSearch.value);
+});
+newTaskPetSearch.addEventListener('keydown', (event) => {
+  if (event.key === 'ArrowDown') { event.preventDefault(); if (newTaskPetSuggestions.hidden) renderTaskPetSuggestions(newTaskPetSearch.value); moveTaskPetSuggestion(1); }
+  if (event.key === 'ArrowUp') { event.preventDefault(); if (newTaskPetSuggestions.hidden) renderTaskPetSuggestions(newTaskPetSearch.value); moveTaskPetSuggestion(-1); }
+  if (event.key === 'Enter' && newTaskPetActive >= 0) { event.preventDefault(); newTaskPetSuggestions.querySelectorAll('.product-suggestion')[newTaskPetActive]?.click(); }
+  if (event.key === 'Escape') closeTaskPetSuggestions();
+});
+newTaskPetSearch.addEventListener('blur', () => setTimeout(closeTaskPetSuggestions, 120));
+
+// 업무 상세의 [알림 보내기]: 그 업무의 반려동물·날짜·시간으로 채운 메시지 화면(예약 확인)을 연다.
+document.querySelector('#taskDetailNotify').addEventListener('click', () => {
+  const params = MessagingCore.reservationFromTask(selectedTask);
+  if (params) msgOpenWith(params);
+});
+
 let pendingTaskAssignment = null;
 document.querySelector('#newTaskForm').addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -3611,6 +4009,11 @@ document.querySelector('#newTaskForm').addEventListener('submit', async (event) 
   if (!title || !assignee) return;
   let message = document.querySelector('#newTaskMessage');
   if (!message) { message = document.createElement('p'); message.id = 'newTaskMessage'; message.className = 'form-message'; message.setAttribute('role', 'status'); form.after(message); }
+  if (newTaskPetSearch.value.trim() && !newTaskPetId.value) {
+    message.textContent = '반려동물은 추천 목록에서 눌러 선택해 주세요. 연결하지 않으려면 칸을 비워 주세요.';
+    newTaskPetSearch.focus();
+    return;
+  }
   const release = lockSubmission('#newTaskForm', button, '업무 저장 중…');
   let creationUnknown = false;
   let completed = false;
@@ -3618,7 +4021,7 @@ document.querySelector('#newTaskForm').addEventListener('submit', async (event) 
     if (!pendingTaskAssignment) {
       let response;
       try {
-        response = await api('action_tasks', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ title, due_date: document.querySelector('#newTaskDueDate').value || null, scheduled_time: document.querySelector('#newTaskTime').value || null, priority: document.querySelector('#newTaskPriority').value }) });
+        response = await api('action_tasks', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ title, due_date: document.querySelector('#newTaskDueDate').value || null, scheduled_time: document.querySelector('#newTaskTime').value || null, priority: document.querySelector('#newTaskPriority').value, pet_id: newTaskPetId.value ? Number(newTaskPetId.value) : null }) });
       } catch { creationUnknown = true; throw new Error('creation result unknown'); }
       if (!response.ok) throw new Error('task not saved');
       creationUnknown = true;
@@ -3634,7 +4037,8 @@ document.querySelector('#newTaskForm').addEventListener('submit', async (event) 
       if (!verified.ok || !(await verified.json()).length) throw new Error('assignment not confirmed');
     }
     pendingTaskAssignment = null; completed = true;
-    form.reset(); document.querySelector('#newTaskDueDate').value = getLocalDate();
+    form.reset(); newTaskPetLabel = ''; newTaskPetPrefill = ''; newTaskPetId.value = ''; // 숨은 입력칸은 reset으로 비워지지 않아 직접 비운다
+    document.querySelector('#newTaskDueDate').value = getLocalDate();
     message.textContent = '업무를 등록했습니다.';
     try { await loadTasks(); await loadDashboard(); }
     catch { message.textContent = '업무를 등록했습니다. 화면은 새로고침 후 확인해 주세요.'; }
@@ -3769,6 +4173,7 @@ document.querySelector('#submitSale').addEventListener('click', async () => {
     }
     const saleId = await response.json();
     lastSaleAttempt = null;
+    const nextDueJobs = collectSaleNextDue(payload.p_sold_at); // 목록을 비우기 전에 저장할 다음 알림일을 모아 둔다
     saleItems = []; renderSale();
     salePetSearch.value = ''; salePetId.value = '';
     updateSalePetHistory();
@@ -3777,6 +4182,10 @@ document.querySelector('#submitSale').addEventListener('click', async () => {
       message.textContent = `판매가 등록되었습니다. 판매 번호: ${saleId} · 대시보드와 판매 내역에 반영되었습니다.`;
     } catch {
       message.textContent = `판매가 등록되었습니다. 판매 번호: ${saleId} · 대시보드는 새로고침 후 확인해 주세요.`;
+    }
+    if (nextDueJobs.length) {
+      const result = await saveSaleNextDue(nextDueJobs, payload.p_sold_at); // 실패해도 판매 결과는 그대로 두고 안내만 덧붙인다
+      if (result.failed) message.textContent += ` 다음 알림일 ${result.failed}건은 저장하지 못했어요. 나중에 다시 확인해 주세요.`;
     }
   } catch (error) { message.textContent = error instanceof TypeError ? '연결이 끊겨 판매 결과를 확인하지 못했습니다. 이 화면을 새로고침하지 말고 같은 목록으로 다시 등록해 주세요.' : error.message; }
   finally { release(); }
@@ -3812,5 +4221,1053 @@ document.querySelector('#submitPurchase').addEventListener('click', async () => 
   } catch (error) { message.textContent = error instanceof TypeError ? '입고 결과를 확인하지 못했습니다. 다시 등록하기 전에 새로고침하여 재고와 매입단가를 확인하세요.' : error.message; }
   finally { release(); }
 });
+
+// ---------- 메시지 발송: 접종 안내 문구를 만들고 QR로 폰 문자 앱에 넘긴다 ----------
+// 서버·외부 업체 없이 이 화면 안에서만 동작한다. 폰 카메라로 QR을 비추면 문자 앱에 번호와 문구가 채워지고, 전송은 폰에서 누른다.
+const msgPetSearch = document.querySelector('#msgPetSearch');
+const msgPetSuggestions = document.querySelector('#msgPetSuggestions');
+const msgLastVaccine = document.querySelector('#msgLastVaccine');
+const msgPhone = document.querySelector('#msgPhone');
+const msgTypeChoices = document.querySelector('#msgTypeChoices');
+const msgVaccineStep = document.querySelector('#msgVaccineStep');
+const msgVaccineChoices = document.querySelector('#msgVaccineChoices');
+const msgVaccineOther = document.querySelector('#msgVaccineOther');
+const msgDateStep = document.querySelector('#msgDateStep');
+const msgDueDate = document.querySelector('#msgDueDate');
+const msgDueQuick = document.querySelector('#msgDueQuick');
+const msgPastWarning = document.querySelector('#msgPastWarning');
+const msgTimeStep = document.querySelector('#msgTimeStep');
+const msgTime = document.querySelector('#msgTime');
+const msgText = document.querySelector('#msgText');
+const msgTokenButtons = document.querySelector('#msgTokenButtons');
+const msgSpeak = document.querySelector('#msgSpeak');
+const msgSpeakHint = document.querySelector('#msgSpeakHint');
+const msgSavePhrase = document.querySelector('#msgSavePhrase');
+const msgSavedPhrases = document.querySelector('#msgSavedPhrases');
+const msgCounter = document.querySelector('#msgCounter');
+const msgQr = document.querySelector('#msgQr');
+const msgQrHint = document.querySelector('#msgQrHint');
+const msgClinicName = document.querySelector('#msgClinicName');
+const msgClinicPhone = document.querySelector('#msgClinicPhone');
+const msgClinicHint = document.querySelector('#msgClinicHint');
+const msgClinicPhoneOn = document.querySelector('#msgClinicPhoneOn');
+const msgHistoryView = document.querySelector('#msgHistoryView');
+const msgHistorySummary = document.querySelector('#msgHistorySummary');
+const msgPrefBox = document.querySelector('#msgPref');
+const msgPrefStatus = document.querySelector('#msgPrefStatus');
+const msgPrefWarning = document.querySelector('#msgPrefWarning');
+const msgPrefConsent = document.querySelector('#msgPrefConsent');
+const msgPrefOptout = document.querySelector('#msgPrefOptout');
+const msgPrefClear = document.querySelector('#msgPrefClear');
+const msgPrefConfirm = document.querySelector('#msgPrefConfirm');
+const msgPrefConfirmText = document.querySelector('#msgPrefConfirmText');
+const msgPrefConfirmYes = document.querySelector('#msgPrefConfirmYes');
+const msgPrefConfirmNo = document.querySelector('#msgPrefConfirmNo');
+const msgUnsentPrompt = document.querySelector('#msgUnsentPrompt');
+const msgUnsentText = document.querySelector('#msgUnsentText');
+const msgUnsentYes = document.querySelector('#msgUnsentYes');
+const msgUnsentNo = document.querySelector('#msgUnsentNo');
+const msgSent = document.querySelector('#msgSent');
+const msgSentNote = document.querySelector('#msgSentNote');
+const msgDupHint = document.querySelector('#msgDupHint');
+const msgHistoryRange = document.querySelector('#msgHistoryRange');
+const msgHistoryStatus = document.querySelector('#msgHistoryStatus');
+const msgHistorySearch = document.querySelector('#msgHistorySearch');
+const msgHistoryList = document.querySelector('#msgHistoryList');
+const msgHistoryEmpty = document.querySelector('#msgHistoryEmpty');
+const msgPrefList = document.querySelector('#msgPrefList');
+const msgPrefListEmpty = document.querySelector('#msgPrefListEmpty');
+
+const MSG_CLINIC_KEY = 'messagingClinicProfile';
+const MSG_PHRASES_KEY = 'messagingSavedPhrases';
+const MSG_MAX_PHRASES = 10;
+const MSG_OTHER_VACCINE = '__other__';
+let msgType = 'vaccine';
+let msgVaccine = '종합백신';
+let msgPetLabel = '';
+let msgPetName = '';
+let msgRequestVersion = 0;
+let msgActiveIndex = -1;
+let msgPetId = null; // 지금 고른 반려동물 번호
+let msgOwnerId = null; // 그 보호자 번호
+let msgPref = null; // 그 보호자의 안내 수신 상태(없으면 미확인)
+let msgPending = null; // 지금 QR로 보여 주는 문자와 기록 여부
+let msgSentRows = []; // 이 반려동물에게 이미 보낸 기록(이미 보냈어요 안내용)
+const msgUnsentQueue = []; // 기록 없이 넘어간 문자들(보냈나요? 확인 대기)
+let msgHistoryRows = [];
+let msgHistoryRangeId = '30d';
+let msgHistoryStatusId = 'sent'; // 기본은 보낸 문자만 보여 준다(되돌린 것은 '되돌린 것까지'를 눌러야 보인다)
+let msgHistoryViewId = 'date';
+const MSG_HISTORY_VIEWS = [{ id: 'date', label: '날짜별' }, { id: 'owner', label: '보호자·반려동물별' }];
+let msgTextEdited = false; // 직원이 문구를 직접 고쳤는지
+let msgPhoneEdited = false; // 직원이 번호를 직접 고쳤는지
+let msgLastDue = ''; // 직전 날짜 값(바뀔 때 옛 날짜가 문구에 남았는지 확인하려고 기억)
+const msgStale = new Set(); // 바뀌기 전의 반려동물 이름·날짜 표기. 문구에 남아 있으면 QR을 만들지 않는다.
+
+function msgStorageGet(key, fallback, isValid) {
+  try {
+    const raw = localStorage.getItem(key);
+    const value = raw ? JSON.parse(raw) : fallback;
+    return !isValid || isValid(value) ? value : fallback;
+  } catch { return fallback; }
+}
+const msgIsObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+const msgIsPhraseList = (value) => Array.isArray(value) && value.every((item) => typeof item === 'string');
+function msgStorageSet(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* 저장이 막혀 있어도 화면은 그대로 동작한다 */ }
+}
+
+function msgMakeChoice(label, onClick, extraClass = '') {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = `msg-choice ${extraClass}`.trim();
+  button.textContent = label;
+  button.addEventListener('click', onClick);
+  return button;
+}
+function msgSetPressed(container, predicate) {
+  container.querySelectorAll('.msg-choice').forEach((button) => button.setAttribute('aria-pressed', String(predicate(button))));
+}
+
+// 날짜를 바꿀 때 옛 날짜 표기를 기억해 두었다가, 문구에 그대로 남아 있으면 QR을 막는다.
+function msgSetDue(value) {
+  if (msgLastDue && msgLastDue !== value) msgStale.add(MessagingCore.formatDueDate(msgLastDue, getLocalDate()));
+  msgLastDue = value;
+  msgDueDate.value = value;
+}
+
+function msgCurrentVaccineName() {
+  return msgVaccine === MSG_OTHER_VACCINE ? msgVaccineOther.value.trim() : msgVaccine;
+}
+
+function msgRefreshText(keepEdits = false) {
+  if (msgType === 'custom') return; // 직접 쓰는 문구는 입력 값이 바뀌어도 덮어쓰지 않는다
+  if (keepEdits && msgTextEdited) return; // 병원 정보처럼 자주 안 바뀌는 값은 직원이 고친 문구를 지우지 않는다
+  msgTextEdited = false;
+  msgText.value = MessagingCore.buildMessageText({
+    type: msgType, clinicName: msgClinicName.value.trim(), clinicPhone: msgClinicPhoneOn.checked ? msgClinicPhone.value.trim() : '',
+    petName: msgPetName, vaccineName: msgCurrentVaccineName(), dueDate: msgDueDate.value, time: msgTime.value, today: getLocalDate()
+  });
+}
+
+function msgShowQrMessage(hint) {
+  msgQr.replaceChildren();
+  delete msgQr.dataset.payload;
+  msgQrHint.textContent = hint;
+  msgPending = null;
+  msgSent.hidden = true;
+  msgSentNote.textContent = '';
+  msgDupHint.hidden = true;
+}
+
+function msgRefreshQr() {
+  const today = getLocalDate();
+  msgPastWarning.hidden = !(msgDueDate.value && MessagingCore.isPast(msgDueDate.value, today));
+  msgClinicHint.hidden = Boolean(msgClinicName.value.trim());
+
+  const filled = MessagingCore.fillTokens(msgText.value, {
+    petName: msgPetName, dueDate: msgDueDate.value, clinicName: msgClinicName.value.trim(), today
+  });
+  const check = MessagingCore.checkQr(msgPhone.value, filled);
+  const charCount = [...filled].length;
+  const spare = Math.max(0, Math.floor((check.maxBytes - check.bytes) / 3));
+  msgCounter.textContent = !filled.trim() ? '' : check.reason === 'too-long'
+    ? `현재 ${charCount}글자 · 너무 길어요. 조금 줄여 주세요.`
+    : `현재 ${charCount}글자 · 한글로 약 ${spare}글자 더 쓸 수 있어요.`;
+
+  if (!msgText.value.trim()) return msgShowQrMessage(msgType === 'custom' ? '문구를 입력해 주세요.' : '반려동물과 날짜를 고르면 여기에 QR이 나타나요.');
+  const currentDue = msgDueDate.value ? MessagingCore.formatDueDate(msgDueDate.value, today) : '';
+  [...msgStale].forEach((item) => {
+    if (!msgText.value.includes(item) || item === currentDue || (msgPetName && msgPetName.includes(item))) msgStale.delete(item);
+  });
+  if (msgStale.size) return msgShowQrMessage('문구에 이전 반려동물 이름이나 날짜가 남아 있어요. 확인하고 고쳐 주세요.');
+  const unfilled = MessagingCore.findUnfilledTokens(filled);
+  if (unfilled.length) return msgShowQrMessage(`문구에 아직 채워지지 않은 ${unfilled.join(' ')} 부분이 있어요. 날짜나 병원 정보를 넣어 주세요.`);
+  if (check.reason === 'bad-phone') return msgShowQrMessage(msgPhone.value.trim() ? '받는 번호를 확인해 주세요. 휴대전화 번호만 보낼 수 있어요.' : '반려동물을 고르거나 받는 번호를 입력해 주세요.');
+  if (check.reason === 'empty-text') return msgShowQrMessage('문구를 입력해 주세요.');
+  if (check.reason === 'too-long') return msgShowQrMessage('문구가 길어서 QR을 만들 수 없어요. 조금 줄여 주세요.');
+
+  const payload = MessagingCore.toQrText(MessagingCore.normalizeMobile(msgPhone.value), filled);
+  msgQr.innerHTML = QrCode.toSvg(QrCode.encode(payload).modules);
+  msgQr.dataset.payload = payload;
+  msgQrHint.textContent = '폰 카메라로 이 QR을 비추세요. 문자 앱이 열리면 내용을 확인하고 전송을 눌러 주세요.';
+
+  // 같은 문구·반려동물·종류·날짜면 같은 기록 대상으로 보고, 바뀌면 새 대상(새 키)으로 본다.
+  const dueOn = (msgType === 'vaccine' || msgType === 'reservation') && msgDueDate.value ? msgDueDate.value : null;
+  const signature = JSON.stringify([msgPetId, msgType, dueOn, filled, MessagingCore.normalizeMobile(msgPhone.value)]); // 번호는 같은지 비교만 하고 저장하지 않는다
+  if (!msgPending || msgPending.signature !== signature) {
+    msgPending = { signature, clientKey: msgNewKey(), petId: msgPetId, petLabel: msgPetLabel, type: msgType, dueOn, text: filled, logged: false, recordId: null, shownAt: Date.now() };
+  }
+  msgSent.hidden = false;
+  msgSent.disabled = msgPending.logged;
+  msgSentNote.textContent = msgPending.logged ? '기록했어요 ✔ 아래 알림 이력에서 확인할 수 있어요.' : '폰에서 전송한 뒤 눌러 주세요.';
+  msgUpdateDupHint();
+}
+
+function msgRefreshAll(keepEdits = false) { msgRefreshText(keepEdits); msgRefreshQr(); }
+
+function msgUpdateTypeUi() {
+  msgVaccineStep.hidden = msgType !== 'vaccine';
+  msgDateStep.hidden = msgType === 'aftercare';
+  msgTimeStep.hidden = msgType !== 'reservation';
+  msgTokenButtons.hidden = msgType !== 'custom';
+  msgSavePhrase.hidden = msgType !== 'custom';
+  msgSpeak.hidden = msgType !== 'custom' || !MsgSpeechRecognition;
+  msgSpeakHint.hidden = msgSpeak.hidden;
+  msgSavedPhrases.hidden = msgType !== 'custom' || !msgSavedPhrases.childElementCount;
+  msgSetPressed(msgTypeChoices, (button) => button.dataset.type === msgType);
+}
+
+// ---- 반려동물 고르기 (판매 관리와 같은 초성 검색 + 카드 클릭) ----
+function msgCloseSuggestions() {
+  msgActiveIndex = -1;
+  msgPetSuggestions.hidden = true;
+  msgPetSearch.setAttribute('aria-expanded', 'false');
+  msgPetSearch.removeAttribute('aria-activedescendant');
+}
+
+function msgRenderSuggestions(keyword = '') {
+  const labels = [...salePetDirectory.keys()].sort((a, b) => a.localeCompare(b, 'ko'));
+  const matched = (keyword.trim() ? labels.filter((label) => matchesKoreanText(label, keyword)) : labels).slice(0, 8);
+  msgActiveIndex = -1;
+  msgPetSuggestions.replaceChildren();
+  msgPetSearch.setAttribute('aria-expanded', 'true');
+  if (!matched.length) {
+    const empty = document.createElement('p');
+    empty.className = 'suggestion-empty';
+    empty.textContent = '일치하는 반려동물이 없습니다. 이름이나 초성을 다시 입력해 주세요.';
+    msgPetSuggestions.append(empty);
+  }
+  matched.forEach((label, index) => {
+    const option = document.createElement('button');
+    option.type = 'button';
+    option.className = 'product-suggestion';
+    option.id = `msg-pet-option-${index}`;
+    option.setAttribute('role', 'option');
+    option.textContent = label;
+    option.addEventListener('mousedown', (event) => event.preventDefault());
+    option.addEventListener('click', () => msgSelectPet(label));
+    msgPetSuggestions.append(option);
+  });
+  msgPetSuggestions.hidden = false;
+}
+
+function msgMoveSuggestion(step) {
+  const options = [...msgPetSuggestions.querySelectorAll('.product-suggestion')];
+  if (!options.length) return;
+  msgActiveIndex = msgActiveIndex < 0 ? (step > 0 ? 0 : options.length - 1) : (msgActiveIndex + step + options.length) % options.length;
+  options.forEach((option, index) => option.classList.toggle('active', index === msgActiveIndex));
+  msgPetSearch.setAttribute('aria-activedescendant', options[msgActiveIndex].id);
+  options[msgActiveIndex].scrollIntoView({ block: 'nearest' });
+}
+
+function msgClearPet() {
+  msgCapturePending(); // 기록 없이 넘어가는 문자가 있으면 "보냈나요?"를 묻는다
+  msgRequestVersion += 1; // 아직 도착하지 않은 이전 응답은 무시한다
+  msgPetId = null;
+  msgOwnerId = null;
+  msgPref = null;
+  msgSentRows = [];
+  msgRenderPref();
+  if (msgPetName) msgStale.add(msgPetName);
+  if (msgPetLabel) msgSetDue(''); // 날짜는 반려동물마다 다르므로 다른 반려동물을 고르면 다시 고르게 한다
+  msgPhoneEdited = false;
+  msgPetLabel = '';
+  msgPetName = '';
+  msgPhone.value = '';
+  msgLastVaccine.hidden = true;
+  msgLastVaccine.textContent = '';
+}
+
+async function msgSelectPet(label) {
+  msgPetSearch.value = label;
+  msgCloseSuggestions();
+  if (msgPetId !== null && salePetDirectory.get(label) === msgPetId) return; // 같은 반려동물을 다시 골랐으면 그대로 둔다
+  msgClearPet();
+  msgRefreshAll();
+  const petId = salePetDirectory.get(label);
+  if (!petId) return;
+  msgPetLabel = label;
+  msgPetId = petId;
+  const version = msgRequestVersion;
+  try {
+    const [detailResponse, visitResponse, sentResponse, ownerResponse] = await Promise.all([
+      api('rpc/rpc_get_pet_detail', { method: 'POST', body: JSON.stringify({ p_pet_id: petId }) }),
+      api(`pet_visits?select=visit_date,record&pet_id=eq.${petId}&order=visit_date.desc.nullslast&limit=30`),
+      api(`reminder_log?select=id,created_at,kind,ref_key,due_on,status,message_text,pet_id&pet_id=eq.${petId}&status=eq.sent&order=created_at.desc&limit=100`),
+      api(`pets?select=owner_id&id=eq.${petId}`)
+    ]);
+    if (!detailResponse.ok) throw new Error('detail');
+    const [detail] = await detailResponse.json();
+    if (version !== msgRequestVersion) return;
+    if (!detail) return msgShowQrMessage('보호자 정보를 찾지 못했어요. 다시 골라 주세요.');
+    const visits = visitResponse.ok ? await visitResponse.json() : [];
+    const sentRows = sentResponse.ok ? await sentResponse.json() : [];
+    const ownerRows = ownerResponse.ok ? await ownerResponse.json() : [];
+    if (version !== msgRequestVersion) return;
+    const ownerId = ownerRows[0] ? ownerRows[0].owner_id : null;
+    let pref = null;
+    if (ownerId !== null) {
+      const prefResponse = await api(`owner_reminder_pref?select=status,status_on,method&owner_id=eq.${ownerId}`);
+      pref = prefResponse.ok ? (await prefResponse.json())[0] || null : null;
+      if (version !== msgRequestVersion) return;
+    }
+    msgPetName = detail.pet_name;
+    msgSentRows = sentRows;
+    msgOwnerId = ownerId;
+    msgPref = pref;
+    msgRenderPref();
+    if (!msgPhoneEdited) {
+      const normalized = MessagingCore.normalizeMobile(detail.owner_phone);
+      msgPhone.value = normalized ? formatOwnerPhone(normalized) : String(detail.owner_phone ?? '');
+    }
+    const lastVaccine = visits.find((visit) => visit.record && isVaccineText(visit.record));
+    if (lastVaccine) {
+      msgLastVaccine.textContent = `마지막 접종 기록: ${lastVaccine.visit_date || '날짜 모름'} ${lastVaccine.record.slice(0, 40)}`;
+      msgLastVaccine.hidden = false;
+    }
+    msgRefreshAll();
+  } catch {
+    if (version !== msgRequestVersion) return;
+    msgShowQrMessage('보호자 정보를 불러오지 못했어요. 다시 골라 주세요.');
+  }
+}
+
+// ---- 보낸 문자 기록(알림 이력) · 안 보낸 문자 확인 · 이미 보냈어요 안내 ----
+function msgNewKey() {
+  if (window.crypto && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
+
+// 같은 건(같은 반려동물·종류·예정일)을 이미 보냈으면 알려 준다. 막지는 않는다.
+function msgUpdateDupHint() {
+  const pending = msgPending;
+  if (!pending || pending.logged || pending.petId === null || pending.petId !== msgPetId) { msgDupHint.hidden = true; return; }
+  const found = MessagingCore.findSameSend(msgSentRows, { petId: pending.petId, refKey: pending.type, dueOn: pending.dueOn, today: getLocalDate() });
+  if (!found) { msgDupHint.hidden = true; return; }
+  const [, month, day] = MessagingCore.toKstDate(found.created_at).split('-').map(Number);
+  msgDupHint.textContent = `${month}월 ${day}일에 같은 안내를 이미 보냈어요. 그래도 보낼 수 있어요.`;
+  msgDupHint.hidden = false;
+}
+
+async function msgRecordSend(pending, status) {
+  try {
+    const response = await api('rpc/rpc_log_reminder', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_client_key: pending.clientKey, p_pet_id: pending.petId, p_kind: 'manual', p_ref_key: pending.type,
+        p_due_on: pending.dueOn, p_status: status, p_message_text: pending.text
+      })
+    });
+    if (!response.ok) return false;
+    const id = await response.json();
+    if (status === 'sent' && pending.petId !== null && pending.petId === msgPetId) {
+      msgSentRows.unshift({ id, created_at: new Date().toISOString(), kind: 'manual', ref_key: pending.type, due_on: pending.dueOn, status, message_text: pending.text, pet_id: pending.petId });
+    }
+    msgLoadHistory();
+    return id || true;
+  } catch { return false; }
+}
+
+// 기록하지 않은 채 반려동물을 바꾸면 "방금 만든 문자를 보냈나요?"를 한 번 묻는다. 바꾸기 전의 문구·반려동물로 기록한다.
+const MSG_UNSENT_MIN_MS = 3000; // 이 시간 이상 화면에 있던 QR만 "보냈나요?"를 묻는다(둘러보기만 한 문자는 묻지 않는다)
+function msgCapturePending() {
+  if (msgPending && !msgPending.logged && Date.now() - msgPending.shownAt >= MSG_UNSENT_MIN_MS) {
+    msgUnsentQueue.push({ ...msgPending });
+    msgShowNextUnsent();
+  }
+  msgPending = null;
+}
+function msgShowNextUnsent() {
+  const next = msgUnsentQueue[0];
+  if (!next) { msgUnsentPrompt.hidden = true; return; }
+  const who = next.petLabel ? `${next.petLabel} · ` : '';
+  const more = msgUnsentQueue.length > 1 ? ` · 남은 확인 ${msgUnsentQueue.length - 1}건` : '';
+  msgUnsentText.textContent = `방금 만든 문자를 보냈나요? (${who}${MessagingCore.kindLabel('manual', next.type)}${more})`;
+  msgUnsentPrompt.hidden = false;
+}
+let msgUnsentBusy = false;
+async function msgAnswerUnsent(sent) {
+  if (msgUnsentBusy) return; // 저장하는 동안 다시 눌러도 다음 문자를 건드리지 않는다
+  const item = msgUnsentQueue[0];
+  if (!item) return;
+  msgUnsentBusy = true;
+  msgUnsentYes.disabled = true;
+  msgUnsentNo.disabled = true;
+  try {
+    if (sent && !(await msgRecordSend(item, 'sent'))) {
+      msgUnsentText.textContent = `기록하지 못했어요. 다시 눌러 주세요. (${item.petLabel || '반려동물 없음'})`;
+      return;
+    }
+    msgUnsentQueue.shift();
+    msgShowNextUnsent();
+  } finally {
+    msgUnsentBusy = false;
+    msgUnsentYes.disabled = false;
+    msgUnsentNo.disabled = false;
+  }
+}
+
+// ---- 보호자 안내 수신 상태 ----
+let msgPrefConfirmAction = 'consent'; // 확인 줄이 무엇을 위한 것인지: 'consent'(거부 → 동의) / 'clear'(거부 표시 지우기)
+function msgAskPrefConfirm(action) {
+  msgPrefConfirmAction = action;
+  msgPrefConfirmText.textContent = action === 'clear'
+    ? '문자를 원하지 않는다는 표시를 지울까요? 지우면 다시 안내 문자 대상이 돼요.'
+    : '문자를 원하지 않는다고 표시된 분이에요. 정말 바꿀까요?';
+  msgPrefConfirm.hidden = false;
+}
+
+function msgRenderPref() {
+  const has = msgOwnerId !== null;
+  msgPrefBox.hidden = !has;
+  msgPrefConfirm.hidden = true;
+  if (!has) { msgPrefWarning.hidden = true; msgPrefStatus.textContent = ''; return; }
+  msgPrefStatus.textContent = MessagingCore.prefLabel(msgPref);
+  msgPrefWarning.hidden = !(msgPref && msgPref.status === 'optout');
+  msgPrefConsent.hidden = Boolean(msgPref && msgPref.status === 'consented');
+  msgPrefOptout.hidden = Boolean(msgPref && msgPref.status === 'optout');
+  msgPrefClear.hidden = !msgPref;
+}
+
+async function msgSetPref(status) {
+  const ownerId = msgOwnerId;
+  if (ownerId === null) return;
+  const method = status === 'consented' ? '구두' : null;
+  let ok = false;
+  try {
+    const response = await api('rpc/rpc_set_reminder_pref', { method: 'POST', body: JSON.stringify({ p_owner_id: ownerId, p_status: status, p_method: method, p_note: null }) });
+    ok = response.ok;
+  } catch { ok = false; }
+  if (ownerId !== msgOwnerId) { msgLoadPrefList(); return; } // 그 사이 다른 보호자로 바뀌었으면 화면은 건드리지 않는다
+  if (!ok) { msgPrefStatus.textContent = '저장하지 못했어요. 다시 눌러 주세요.'; return; }
+  msgPref = status ? { status, status_on: getLocalDate(), method } : null;
+  msgRenderPref();
+  msgLoadPrefList();
+}
+
+let msgPrefRows = [];
+async function msgLoadPrefList() {
+  try {
+    const response = await api('owner_reminder_pref?select=owner_id,status,status_on,method,owner:owners(name)&order=updated_at.desc&limit=200');
+    msgPrefRows = response.ok ? await response.json() : [];
+  } catch { msgPrefRows = []; }
+  msgPrefList.replaceChildren();
+  msgPrefListEmpty.hidden = msgPrefRows.length > 0;
+  msgPrefRows.forEach((row) => {
+    const item = document.createElement('div');
+    item.className = 'msg-pref-row';
+    item.dataset.ownerId = row.owner_id;
+    const name = document.createElement('strong');
+    name.textContent = row.owner && row.owner.name ? row.owner.name : '보호자';
+    const label = document.createElement('span');
+    label.className = row.status === 'optout' ? 'msg-pref-row-label is-optout' : 'msg-pref-row-label';
+    label.textContent = MessagingCore.prefLabel(row);
+    let armed = false;
+    const clear = msgMakeChoice('지우기', async () => {
+      if (row.status === 'optout' && !armed) {
+        armed = true;
+        clear.textContent = '한 번 더 누르면 지워요';
+        setTimeout(() => { armed = false; clear.textContent = '지우기'; }, 4000);
+        return;
+      }
+      clear.disabled = true;
+      try {
+        const response = await api('rpc/rpc_set_reminder_pref', { method: 'POST', body: JSON.stringify({ p_owner_id: row.owner_id, p_status: null, p_method: null, p_note: null }) });
+        if (!response.ok) { clear.disabled = false; return; }
+      } catch { clear.disabled = false; return; }
+      if (row.owner_id === msgOwnerId) { msgPref = null; msgRenderPref(); }
+      msgLoadPrefList();
+    }, 'msg-pref-row-clear');
+    item.append(name, label, clear);
+    msgPrefList.append(item);
+  });
+}
+
+// ---- 알림 이력 (날짜별 카드) ----
+let msgHistoryError = false;
+async function msgLoadHistory() {
+  try {
+    const response = await api('reminder_log?select=id,created_at,kind,ref_key,due_on,status,message_text,pet_id,pet:pets(id,name,owner_id,owner:owners(id,name))&order=created_at.desc&limit=500');
+    if (!response.ok) throw new Error('history');
+    msgHistoryRows = await response.json();
+    msgHistoryError = false;
+  } catch { msgHistoryRows = []; msgHistoryError = true; }
+  msgRenderHistory();
+}
+
+function msgPetDisplay(row) {
+  if (!row.pet) return '반려동물 정보 없음';
+  return `${row.pet.name}${row.pet.owner && row.pet.owner.name ? ` (${row.pet.owner.name})` : ''}`;
+}
+
+function msgShortDate(isoDate) {
+  const [, month, day] = isoDate.split('-').map(Number);
+  return `${month}/${day}`;
+}
+
+// mode 'date': 날짜별 보기(시각 + 반려동물(보호자)) / 'owner': 보호자별 보기(날짜·시각 + 반려동물 이름)
+function msgBuildHistoryCard(row, mode = 'date') {
+  const card = document.createElement('article');
+  card.className = 'msg-history-card';
+  card.dataset.id = row.id;
+  card.dataset.status = row.status;
+  const head = document.createElement('div');
+  head.className = 'msg-history-head';
+  const time = document.createElement('span');
+  time.className = 'msg-history-time';
+  time.textContent = mode === 'owner'
+    ? `${msgShortDate(MessagingCore.toKstDate(row.created_at))} ${MessagingCore.toKstTime(row.created_at)}`
+    : MessagingCore.toKstTime(row.created_at);
+  const pet = document.createElement('strong');
+  pet.className = 'msg-history-pet';
+  pet.textContent = mode === 'owner' ? (row.pet ? row.pet.name : '반려동물 정보 없음') : msgPetDisplay(row);
+  const kind = document.createElement('span');
+  kind.className = 'msg-badge msg-badge-kind';
+  kind.textContent = MessagingCore.kindLabel(row.kind, row.ref_key);
+  head.append(time, pet, kind);
+  if (row.due_on) {
+    const due = document.createElement('span');
+    due.className = 'msg-history-due';
+    due.textContent = `예정 ${msgShortDate(row.due_on)}`;
+    head.append(due);
+  }
+  const status = document.createElement('span');
+  status.className = `msg-badge msg-badge-${row.status}`;
+  status.textContent = MessagingCore.statusLabel(row.status);
+  head.append(status);
+
+  const snippet = document.createElement('p');
+  snippet.className = 'msg-history-snippet';
+  snippet.textContent = String(row.message_text || '').replace(/\s+/g, ' ');
+  const full = document.createElement('p');
+  full.className = 'msg-history-text';
+  full.hidden = true;
+  full.textContent = row.message_text || '';
+
+  const actions = document.createElement('div');
+  actions.className = 'msg-choices msg-history-actions';
+  const toggle = msgMakeChoice('문구 보기', () => {
+    const open = full.hidden;
+    full.hidden = !open;
+    snippet.hidden = open;
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.textContent = open ? '접기' : '문구 보기';
+  }, 'msg-history-toggle');
+  toggle.setAttribute('aria-expanded', 'false');
+  actions.append(toggle);
+  if (row.status !== 'void') {
+    const undo = msgMakeChoice('되돌리기', async () => {
+      undo.disabled = true;
+      try {
+        const response = await api('rpc/rpc_void_reminder', { method: 'POST', body: JSON.stringify({ p_id: row.id }) });
+        if (!response.ok) { undo.disabled = false; return; }
+      } catch { undo.disabled = false; return; }
+      msgSentRows = msgSentRows.filter((item) => item.id !== row.id);
+      if (msgPending && msgPending.recordId === row.id) { msgPending = null; msgRefreshQr(); } // 지금 화면의 QR 기록을 되돌렸으면 새로 기록할 수 있게 한다
+      await msgLoadHistory();
+      msgUpdateDupHint();
+    }, 'msg-history-void');
+    actions.append(undo);
+  }
+  card.append(head, snippet, full, actions);
+  return card;
+}
+
+// 보호자 한 명의 묶음: 한 줄 요약(반려동물별 건수·보낸 건수·마지막 날짜)을 누르면 문자들이 펼쳐진다.
+function msgBuildOwnerGroup(group, open) {
+  const details = document.createElement('details');
+  details.className = 'msg-owner-card';
+  details.dataset.owner = group.key;
+  details.open = open;
+  const summary = document.createElement('summary');
+  summary.className = 'msg-owner-summary';
+  const name = document.createElement('strong');
+  name.className = 'msg-owner-name';
+  name.textContent = group.ownerName;
+  summary.append(name);
+  if (group.pets.length) {
+    const pets = document.createElement('span');
+    pets.className = 'msg-owner-pets';
+    pets.textContent = group.pets.map((pet) => `${pet.name} ${pet.count}건`).join(' · ');
+    summary.append(pets);
+  }
+  const stat = document.createElement('span');
+  stat.className = 'msg-owner-stat';
+  stat.textContent = `보낸 문자 ${group.sentCount}건${group.voidCount ? ` · 되돌림 ${group.voidCount}건` : ''} · 마지막 ${msgShortDate(MessagingCore.toKstDate(group.lastAt))}`;
+  summary.append(stat);
+  const body = document.createElement('div');
+  body.className = 'msg-owner-rows';
+  group.rows.forEach((row) => body.append(msgBuildHistoryCard(row, 'owner')));
+  details.append(summary, body);
+  return details;
+}
+
+function msgRenderHistory() {
+  const today = getLocalDate();
+  const summary = MessagingCore.summarizeHistory(msgHistoryRows, today);
+  msgHistorySummary.textContent = `오늘 ${summary.todaySent}건 · 이번 달 ${summary.monthSent}건 · 지금까지 보호자 ${summary.ownerCount}명에게 보냈어요`;
+  const keyword = msgHistorySearch.value.trim();
+  const rows = MessagingCore.filterHistory(msgHistoryRows, {
+    range: msgHistoryRangeId, status: msgHistoryStatusId, keyword, today, matches: matchesKoreanText
+  });
+  msgHistoryList.replaceChildren();
+  msgHistoryEmpty.hidden = rows.length > 0;
+  msgHistoryEmpty.textContent = msgHistoryError ? '이력을 불러오지 못했어요. 잠시 뒤 다시 열어 주세요.'
+    : msgHistoryRows.length ? '조건에 맞는 알림이 없어요.' : '아직 보낸 알림이 없어요.';
+  if (msgHistoryViewId === 'owner') {
+    MessagingCore.groupHistoryByOwner(rows).forEach((group, index) => msgHistoryList.append(msgBuildOwnerGroup(group, index === 0 || Boolean(keyword))));
+    return;
+  }
+  MessagingCore.groupHistoryByDate(rows).forEach((group) => {
+    const heading = document.createElement('h3');
+    heading.className = 'msg-history-date';
+    heading.textContent = `${MessagingCore.formatDueDate(group.date, today)} · ${group.rows.length}건`;
+    msgHistoryList.append(heading);
+    group.rows.forEach((row) => msgHistoryList.append(msgBuildHistoryCard(row, 'date')));
+  });
+}
+
+// ---- 자주 쓰는 문구 ----
+function msgRenderSavedPhrases() {
+  const phrases = msgStorageGet(MSG_PHRASES_KEY, [], msgIsPhraseList);
+  msgSavedPhrases.replaceChildren();
+  phrases.forEach((phrase, index) => {
+    const wrap = document.createElement('span');
+    wrap.className = 'msg-saved-item';
+    wrap.append(msgMakeChoice(phrase.length > 24 ? `${phrase.slice(0, 24)}…` : phrase, () => { msgText.value = phrase; msgTextEdited = true; msgRefreshQr(); }));
+    const remove = msgMakeChoice('×', () => {
+      msgStorageSet(MSG_PHRASES_KEY, msgStorageGet(MSG_PHRASES_KEY, [], msgIsPhraseList).filter((_, i) => i !== index));
+      msgRenderSavedPhrases();
+    }, 'msg-remove');
+    remove.setAttribute('aria-label', `저장한 문구 지우기: ${phrase.slice(0, 12)}`);
+    wrap.append(remove);
+    msgSavedPhrases.append(wrap);
+  });
+  msgSavedPhrases.hidden = msgType !== 'custom' || !phrases.length;
+}
+
+// ---- 말하기(브라우저 음성 인식) ----
+const MsgSpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+let msgRecognition = null;
+function msgStopSpeak() {
+  if (msgRecognition) { try { msgRecognition.stop(); } catch { /* 이미 멈춘 상태 */ } }
+}
+function msgToggleSpeak() {
+  if (msgRecognition) return msgStopSpeak();
+  const recognition = new MsgSpeechRecognition();
+  recognition.lang = 'ko-KR';
+  recognition.continuous = true;
+  recognition.interimResults = false;
+  recognition.onresult = (event) => {
+    for (let i = event.resultIndex; i < event.results.length; i += 1) {
+      if (!event.results[i].isFinal) continue;
+      const spoken = event.results[i][0].transcript.trim();
+      if (!spoken) continue;
+      const start = msgText.selectionStart ?? msgText.value.length;
+      const end = msgText.selectionEnd ?? start;
+      const needsSpace = start > 0 && !/\s$/.test(msgText.value.slice(0, start));
+      const inserted = MessagingCore.insertToken(msgText.value, start, end, `${needsSpace ? ' ' : ''}${spoken}`);
+      msgText.value = inserted.text;
+      msgText.setSelectionRange(inserted.caret, inserted.caret);
+      msgTextEdited = true;
+    }
+    msgRefreshQr();
+  };
+  recognition.onerror = () => { msgQrHint.textContent = '마이크를 쓸 수 없어요. 글자로 입력해 주세요.'; };
+  recognition.onend = () => { msgRecognition = null; msgSpeak.textContent = '🎤 말하기'; msgSpeak.setAttribute('aria-pressed', 'false'); };
+  msgRecognition = recognition;
+  msgSpeak.textContent = '🎤 듣는 중… (누르면 멈춤)';
+  msgSpeak.setAttribute('aria-pressed', 'true');
+  try { recognition.start(); } catch { msgRecognition = null; msgSpeak.textContent = '🎤 말하기'; msgSpeak.setAttribute('aria-pressed', 'false'); }
+}
+
+// ---------- 알림 주기 설정(알림 2단계): 며칠마다 다시 필요한지 약(상품)별로 정해 저장한다 ----------
+const msgRulesPanel = document.querySelector('#msgRules');
+const msgRuleProductSearch = document.querySelector('#msgRuleProductSearch');
+const msgRuleProductSuggestions = document.querySelector('#msgRuleProductSuggestions');
+const msgRuleProductForm = document.querySelector('#msgRuleProductForm');
+const msgRuleProductName = document.querySelector('#msgRuleProductName');
+const msgRuleKinds = document.querySelector('#msgRuleKinds');
+const msgRuleProductAd = document.querySelector('#msgRuleProductAd');
+const msgRuleProductInterval = document.querySelector('#msgRuleProductInterval');
+const msgRuleProductLead = document.querySelector('#msgRuleProductLead');
+const msgRuleProductSave = document.querySelector('#msgRuleProductSave');
+const msgRuleProductNote = document.querySelector('#msgRuleProductNote');
+const msgRuleProductList = document.querySelector('#msgRuleProductList');
+const msgRuleProductEmpty = document.querySelector('#msgRuleProductEmpty');
+const msgRuleLoadNote = document.querySelector('#msgRuleLoadNote');
+
+let msgRuleRows = []; // 저장된 규칙들
+let msgRuleInactive = new Set(); // 판매하지 않는 상품 번호(검색에서 뺀다)
+let msgRuleSelected = null; // 아래 입력 칸에서 고른 상품
+let msgRuleKind = 'rebuy';
+let msgRulesRequest = 0;
+const msgRuleBusy = new Set(); // 저장 중인 키(연타해도 한 번만 보낸다)
+
+async function msgSaveRule({ groupName = null, productId = null, kind = 'rebuy', intervalDays, leadDays }) {
+  try {
+    const response = await api('rpc/rpc_set_reminder_rule', {
+      method: 'POST',
+      body: JSON.stringify({ p_group_name: groupName, p_product_id: productId, p_kind: kind, p_interval_days: intervalDays ?? null, p_lead_days: leadDays ?? null }) // 값이 없으면 null로 보낸다(빠지면 서버가 함수를 찾지 못한다)
+    });
+    return response.ok;
+  } catch { return false; }
+}
+
+async function msgLoadRules() {
+  const version = ++msgRulesRequest;
+  let failed = false;
+  try {
+    const [rulesResponse, inactiveResponse] = await Promise.all([
+      api('reminder_rules?select=id,group_name,product_id,kind,interval_days,lead_days&order=id.asc'),
+      api('products?select=id&active=eq.false&limit=5000')
+    ]);
+    failed = !rulesResponse.ok; // 로그인이 풀렸거나 서버 오류면 "규칙 없음"처럼 보이지 않게 이전 값을 그대로 둔다
+    const rules = rulesResponse.ok ? await rulesResponse.json() : null;
+    const inactive = inactiveResponse.ok ? await inactiveResponse.json() : null;
+    if (version !== msgRulesRequest) return; // 더 최근에 시작한 불러오기가 있으면 이 결과는 버린다
+    if (rules) msgRuleRows = rules;
+    if (inactive) msgRuleInactive = new Set(inactive.map((item) => item.id));
+  } catch { failed = true; }
+  if (version !== msgRulesRequest) return;
+  msgRuleLoadNote.hidden = !failed;
+  msgRenderRules();
+}
+
+function msgProductRule(productId) { return msgRuleRows.find((rule) => rule.product_id === productId) || null; }
+function msgBuildRuleField(labelText, className, placeholder = '') {
+  const label = document.createElement('label');
+  label.className = 'msg-rule-field';
+  label.append(`${labelText} `);
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.inputMode = 'numeric';
+  input.autocomplete = 'off';
+  input.className = className;
+  input.maxLength = className === 'msg-rule-interval' ? 4 : 3;
+  if (placeholder) input.placeholder = placeholder;
+  label.append(input, ' 일');
+  return { label, input };
+}
+
+function msgRenderRuleProductList() {
+  msgRuleProductList.replaceChildren();
+  const rules = msgRuleRows.filter((rule) => rule.product_id !== null);
+  msgRuleProductEmpty.hidden = rules.length > 0;
+  rules.forEach((rule) => {
+    const product = products.find((item) => item.id === rule.product_id);
+    const item = document.createElement('article');
+    item.className = 'msg-rule-item';
+    item.dataset.productId = rule.product_id;
+    const name = document.createElement('strong');
+    name.textContent = product ? product.name : '알 수 없는 상품';
+    const text = document.createElement('p');
+    text.className = 'msg-rule-text';
+    text.textContent = MessagingCore.describeRule(rule);
+    item.append(name, text);
+    const actions = document.createElement('div');
+    actions.className = 'msg-choices';
+    const edit = msgMakeChoice('고치기', () => { if (product) { msgSelectRuleProduct(product); msgRuleProductForm.scrollIntoView({ block: 'center', behavior: 'smooth' }); } }, 'msg-rule-edit');
+    let armed = false;
+    let armedAt = 0;
+    const remove = msgMakeChoice('지우기', async () => {
+      if (!armed) {
+        armed = true;
+        armedAt = Date.now();
+        remove.textContent = '한 번 더 누르면 지워요';
+        setTimeout(() => { armed = false; remove.textContent = '지우기'; }, 4000);
+        return;
+      }
+      if (Date.now() - armedAt < 700) return; // 더블클릭처럼 너무 빠른 두 번째 누름은 확인으로 치지 않는다
+      remove.disabled = true;
+      const ok = await msgSaveRule({ productId: rule.product_id, intervalDays: null });
+      if (!ok) { remove.disabled = false; msgRuleProductNote.textContent = '지우지 못했어요. 다시 눌러 주세요.'; return; }
+      if (msgRuleSelected && msgRuleSelected.id === rule.product_id) { msgRuleProductForm.hidden = true; msgRuleSelected = null; }
+      await msgLoadRules();
+      msgRuleProductNote.textContent = '이 약은 이제 알림 대상이 아니에요.';
+    }, 'msg-rule-delete');
+    actions.append(edit, remove);
+    item.append(actions);
+    msgRuleProductList.append(item);
+  });
+}
+
+function msgRenderRules() {
+  msgRenderRuleProductList();
+}
+
+function msgSetRuleKind(kind) {
+  msgRuleKind = kind;
+  msgSetPressed(msgRuleKinds, (button) => button.dataset.kind === kind);
+  msgRuleProductAd.hidden = kind !== 'rebuy';
+}
+
+function msgSelectRuleProduct(product) {
+  msgRuleSelected = product;
+  msgRuleProductSearch.value = product.name;
+  msgRuleProductSuggestions.hidden = true;
+  msgRuleProductSearch.setAttribute('aria-expanded', 'false');
+  msgRuleProductName.textContent = `${product.name} · ${product.product_categories ? product.product_categories.name : '기타'}`;
+  const rule = msgProductRule(product.id);
+  msgSetRuleKind(rule ? rule.kind : 'rebuy');
+  msgRuleProductInterval.value = rule ? String(rule.interval_days) : '';
+  msgRuleProductLead.value = rule ? String(rule.lead_days) : '';
+  msgRuleProductNote.textContent = '';
+  msgRuleProductForm.hidden = false;
+}
+
+function msgRenderRuleSuggestions(keyword = '') {
+  const matched = products.filter((product) => !msgRuleInactive.has(product.id) && matchesProduct(product, keyword));
+  const shown = matched.slice(0, 8);
+  msgRuleProductSuggestions.replaceChildren();
+  msgRuleProductSearch.setAttribute('aria-expanded', 'true');
+  if (!shown.length) {
+    const empty = document.createElement('p');
+    empty.className = 'suggestion-empty';
+    empty.textContent = '일치하는 약·상품이 없습니다. 이름이나 초성을 다시 입력해 주세요.';
+    msgRuleProductSuggestions.append(empty);
+  }
+  shown.forEach((product, index) => {
+    const option = document.createElement('button');
+    option.type = 'button';
+    option.className = 'product-suggestion';
+    option.id = `msg-rule-option-${index}`;
+    option.setAttribute('role', 'option');
+    option.textContent = `${product.name} · ${product.product_categories ? product.product_categories.name : '기타'} · ${product.code}`;
+    option.addEventListener('mousedown', (event) => event.preventDefault());
+    option.addEventListener('click', () => msgSelectRuleProduct(product));
+    msgRuleProductSuggestions.append(option);
+  });
+  if (matched.length > shown.length) {
+    const more = document.createElement('p');
+    more.className = 'suggestion-more';
+    more.textContent = `더 입력하면 줄어들어요 (${matched.length}개 중 ${shown.length}개만 보여요)`;
+    msgRuleProductSuggestions.append(more);
+  }
+  msgRuleProductSuggestions.hidden = false;
+}
+
+async function msgSaveProductRule() {
+  if (!msgRuleSelected) return;
+  const key = `p:${msgRuleSelected.id}`;
+  if (msgRuleBusy.has(key)) return;
+  const parsed = MessagingCore.parseRuleInput({ intervalText: msgRuleProductInterval.value, leadText: msgRuleProductLead.value });
+  if (!parsed.ok) { msgRuleProductNote.textContent = parsed.error; return; }
+  if (parsed.intervalDays === null) { msgRuleProductNote.textContent = '며칠마다인지 넣어 주세요. 알림에서 빼려면 아래 목록의 [지우기]를 눌러 주세요.'; return; }
+  msgRuleBusy.add(key);
+  msgRuleProductSave.disabled = true;
+  try {
+    const ok = await msgSaveRule({ productId: msgRuleSelected.id, kind: msgRuleKind, intervalDays: parsed.intervalDays, leadDays: parsed.leadDays });
+    msgRuleProductNote.textContent = ok ? '저장했어요 ✔' : '저장하지 못했어요. 다시 눌러 주세요.';
+    if (ok) await msgLoadRules();
+  } finally {
+    msgRuleBusy.delete(key);
+    msgRuleProductSave.disabled = false;
+  }
+}
+
+function msgRulesInit() {
+  MessagingCore.RULE_KINDS.forEach((kind) => {
+    const button = msgMakeChoice(kind.label, () => msgSetRuleKind(kind.id), 'msg-rule-kind');
+    button.dataset.kind = kind.id;
+    msgRuleKinds.append(button);
+  });
+  msgSetRuleKind('rebuy');
+  msgRuleProductSearch.addEventListener('focus', () => msgRenderRuleSuggestions(msgRuleProductSearch.value));
+  msgRuleProductSearch.addEventListener('input', () => {
+    if (msgRuleSelected && msgRuleProductSearch.value !== msgRuleSelected.name) { // 고른 뒤 글자를 바꾸면 이전 상품에 저장되지 않게 입력 칸을 닫는다
+      msgRuleSelected = null;
+      msgRuleProductForm.hidden = true;
+      msgRuleProductNote.textContent = '';
+    }
+    msgRenderRuleSuggestions(msgRuleProductSearch.value);
+  });
+  msgRuleProductSearch.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') { msgRuleProductSuggestions.hidden = true; msgRuleProductSearch.setAttribute('aria-expanded', 'false'); }
+  });
+  msgRuleProductSearch.addEventListener('blur', () => setTimeout(() => { msgRuleProductSuggestions.hidden = true; msgRuleProductSearch.setAttribute('aria-expanded', 'false'); }, 120));
+  msgRuleProductForm.addEventListener('submit', (event) => { event.preventDefault(); msgSaveProductRule(); });
+}
+
+// 밖(공유 업무 등)에서 메시지 화면을 열어 반려동물·종류·날짜·시간을 채운다.
+async function msgOpenWith({ petId, type, dueDate, time }) {
+  document.querySelector('#messagingNav').click();
+  const findLabel = () => { const entry = [...salePetDirectory].find(([, id]) => id === petId); return entry ? entry[0] : null; };
+  let label = salePetDirectory.size ? findLabel() : null;
+  if (!label) { await loadSalePetOptions(); label = findLabel(); } // 목록에 없으면(새로 만든 반려동물 등) 한 번 다시 읽는다
+  if (!label) {
+    // 끝내 못 찾으면 이전에 선택돼 있던 반려동물이 남아 엉뚱한 문자가 만들어지지 않게 비운다
+    msgClearPet();
+    msgPetSearch.value = '';
+    msgRefreshAll();
+    msgShowQrMessage('반려동물을 찾지 못했어요. 직접 골라 주세요.');
+    return;
+  }
+  await msgSelectPet(label);
+  msgType = type;
+  msgTime.value = time || ''; // 시간이 없는 업무면 옛 시간이 남지 않게 비운다
+  msgSetDue(dueDate || '');
+  msgUpdateTypeUi();
+  msgRefreshAll();
+}
+
+// ---- 화면 연결 ----
+function msgInit() {
+  MessagingCore.MESSAGE_TYPES.forEach((type) => {
+    const button = msgMakeChoice(type.label, () => {
+      msgStopSpeak();
+      const previous = msgType;
+      msgType = type.id;
+      if (previous !== 'custom' && type.id === 'custom') {
+        msgText.value = MessagingCore.tokenize(msgText.value, { petName: msgPetName, dueDate: msgDueDate.value, today: getLocalDate() });
+        msgTextEdited = true;
+      }
+      msgUpdateTypeUi();
+      msgRefreshAll();
+    });
+    button.dataset.type = type.id;
+    msgTypeChoices.append(button);
+  });
+  MessagingCore.VACCINE_CHOICES.forEach((name) => {
+    const button = msgMakeChoice(name, () => { msgVaccine = name; msgVaccineOther.hidden = true; msgSetPressed(msgVaccineChoices, (b) => b === button); msgRefreshAll(); });
+    button.dataset.vaccine = name;
+    msgVaccineChoices.append(button);
+  });
+  const other = msgMakeChoice('직접 입력', () => { msgVaccine = MSG_OTHER_VACCINE; msgVaccineOther.hidden = false; msgVaccineOther.focus(); msgSetPressed(msgVaccineChoices, (b) => b === other); msgRefreshAll(); });
+  other.dataset.vaccine = MSG_OTHER_VACCINE;
+  msgVaccineChoices.append(other);
+  msgSetPressed(msgVaccineChoices, (b) => b.dataset.vaccine === msgVaccine);
+  MessagingCore.DUE_QUICK_CHOICES.forEach((choice) => {
+    msgDueQuick.append(msgMakeChoice(choice.label, () => { msgSetDue(choice.years ? MessagingCore.addYears(getLocalDate(), choice.years) : MessagingCore.addDays(getLocalDate(), choice.days)); msgRefreshAll(); }));
+  });
+  MessagingCore.TOKEN_LABELS.forEach((token) => {
+    msgTokenButtons.append(msgMakeChoice(token, () => {
+      const inserted = MessagingCore.insertToken(msgText.value, msgText.selectionStart ?? msgText.value.length, msgText.selectionEnd ?? msgText.value.length, token);
+      msgText.value = inserted.text;
+      msgText.focus();
+      msgText.setSelectionRange(inserted.caret, inserted.caret);
+      msgTextEdited = true;
+      msgRefreshQr();
+    }));
+  });
+
+  // 병원 정보는 미리 채워 두고(고칠 수 있음), 고친 값은 이 컴퓨터에 기억한다.
+  const clinic = msgStorageGet(MSG_CLINIC_KEY, {}, msgIsObject);
+  msgClinicName.value = typeof clinic.name === 'string' ? clinic.name : MessagingCore.CLINIC.name;
+  msgClinicPhone.value = typeof clinic.phone === 'string' ? clinic.phone : MessagingCore.CLINIC.phone;
+  msgClinicPhoneOn.checked = clinic.includePhone !== false; // 기본은 넣는다(직접 끈 경우에만 뺀다)
+  msgRenderSavedPhrases();
+  msgUpdateTypeUi();
+
+  if (MsgSpeechRecognition) msgSpeak.addEventListener('click', msgToggleSpeak); // 보이는 것은 msgUpdateTypeUi가 정한다(직접 쓰기에서만)
+
+  msgPetSearch.addEventListener('focus', () => msgRenderSuggestions(msgPetSearch.value));
+  msgPetSearch.addEventListener('input', () => {
+    if (msgPetSearch.value !== msgPetLabel) { msgClearPet(); msgRefreshAll(); }
+    msgRenderSuggestions(msgPetSearch.value);
+  });
+  msgPetSearch.addEventListener('keydown', (event) => {
+    if (event.key === 'ArrowDown') { event.preventDefault(); if (msgPetSuggestions.hidden) msgRenderSuggestions(msgPetSearch.value); msgMoveSuggestion(1); }
+    if (event.key === 'ArrowUp') { event.preventDefault(); if (msgPetSuggestions.hidden) msgRenderSuggestions(msgPetSearch.value); msgMoveSuggestion(-1); }
+    if (event.key === 'Enter' && msgActiveIndex >= 0) { event.preventDefault(); msgPetSuggestions.querySelectorAll('.product-suggestion')[msgActiveIndex]?.click(); }
+    if (event.key === 'Escape') msgCloseSuggestions();
+  });
+  msgPetSearch.addEventListener('blur', () => setTimeout(msgCloseSuggestions, 120));
+
+  msgPhone.addEventListener('input', () => { msgPhoneEdited = true; msgRefreshQr(); });
+  msgVaccineOther.addEventListener('input', msgRefreshAll);
+  msgDueDate.addEventListener('input', () => { msgSetDue(msgDueDate.value); msgRefreshAll(); });
+  msgTime.addEventListener('input', msgRefreshAll);
+  msgText.addEventListener('input', () => { msgTextEdited = true; msgRefreshQr(); });
+  [msgClinicName, msgClinicPhone].forEach((input) => input.addEventListener('input', () => {
+    msgStorageSet(MSG_CLINIC_KEY, { name: msgClinicName.value.trim(), phone: msgClinicPhone.value.trim(), includePhone: msgClinicPhoneOn.checked });
+    msgRefreshAll(true);
+  }));
+  msgClinicPhoneOn.addEventListener('change', () => {
+    msgStorageSet(MSG_CLINIC_KEY, { name: msgClinicName.value.trim(), phone: msgClinicPhone.value.trim(), includePhone: msgClinicPhoneOn.checked });
+    msgRefreshAll(); // 전화번호를 넣고 빼는 것은 문구가 눈에 보이게 바뀌므로 문구를 새로 만든다
+  });
+  msgSavePhrase.addEventListener('click', () => {
+    const phrase = msgText.value.trim();
+    if (!phrase) return;
+    const phrases = msgStorageGet(MSG_PHRASES_KEY, [], msgIsPhraseList).filter((item) => item !== phrase);
+    msgStorageSet(MSG_PHRASES_KEY, [phrase, ...phrases].slice(0, MSG_MAX_PHRASES));
+    msgRenderSavedPhrases();
+  });
+  msgSent.addEventListener('click', async () => {
+    const pending = msgPending;
+    if (!pending || pending.logged) return;
+    msgSent.disabled = true;
+    const ok = await msgRecordSend(pending, 'sent');
+    if (ok && ok !== true) pending.recordId = ok;
+    if (msgPending !== pending) return; // 그 사이 QR이 바뀌었으면 지금 화면은 건드리지 않는다
+    if (ok) {
+      pending.logged = true;
+      msgSentNote.textContent = '기록했어요 ✔ 아래 알림 이력에서 확인할 수 있어요.';
+      msgUpdateDupHint();
+    } else {
+      msgSent.disabled = false;
+      msgSentNote.textContent = '기록하지 못했어요. 다시 눌러 주세요.';
+    }
+  });
+  msgUnsentYes.addEventListener('click', () => msgAnswerUnsent(true));
+  msgUnsentNo.addEventListener('click', () => msgAnswerUnsent(false));
+  msgPrefConsent.addEventListener('click', () => {
+    if (msgPref && msgPref.status === 'optout') msgAskPrefConfirm('consent');
+    else msgSetPref('consented');
+  });
+  msgPrefConfirmYes.addEventListener('click', () => {
+    msgPrefConfirm.hidden = true;
+    msgSetPref(msgPrefConfirmAction === 'clear' ? null : 'consented');
+  });
+  msgPrefConfirmNo.addEventListener('click', () => { msgPrefConfirm.hidden = true; });
+  msgPrefOptout.addEventListener('click', () => msgSetPref('optout'));
+  msgPrefClear.addEventListener('click', () => {
+    if (msgPref && msgPref.status === 'optout') msgAskPrefConfirm('clear');
+    else msgSetPref(null);
+  });
+
+  MessagingCore.HISTORY_RANGES.forEach((range) => {
+    const button = msgMakeChoice(range.label, () => { msgHistoryRangeId = range.id; msgSetPressed(msgHistoryRange, (b) => b === button); msgRenderHistory(); });
+    button.dataset.range = range.id;
+    msgHistoryRange.append(button);
+  });
+  msgSetPressed(msgHistoryRange, (b) => b.dataset.range === msgHistoryRangeId);
+  MessagingCore.HISTORY_STATUSES.forEach((status) => {
+    const button = msgMakeChoice(status.label, () => { msgHistoryStatusId = status.id; msgSetPressed(msgHistoryStatus, (b) => b === button); msgRenderHistory(); });
+    button.dataset.status = status.id;
+    msgHistoryStatus.append(button);
+  });
+  msgSetPressed(msgHistoryStatus, (b) => b.dataset.status === msgHistoryStatusId);
+  MSG_HISTORY_VIEWS.forEach((view) => {
+    const button = msgMakeChoice(view.label, () => { msgHistoryViewId = view.id; msgSetPressed(msgHistoryView, (b) => b === button); msgRenderHistory(); });
+    button.dataset.view = view.id;
+    msgHistoryView.append(button);
+  });
+  msgSetPressed(msgHistoryView, (b) => b.dataset.view === msgHistoryViewId);
+  msgHistorySearch.addEventListener('input', msgRenderHistory);
+
+  document.querySelector('#messagingNav').addEventListener('click', () => {
+    if (!salePetDirectory.size) loadSalePetOptions();
+    msgLoadHistory();
+    msgLoadPrefList();
+    msgRulesPanel.hidden = currentProfile?.role !== 'admin'; // 알림 주기 설정은 관리자만 본다
+    saleRulesLoaded = false; saleRulesTried = false; renderSaleDue(); // 설정 화면에서 규칙을 고칠 수 있으니 판매 화면 규칙을 바로 다시 불러온다(담아 둔 목록이 있어도 저장이 빠지지 않게)
+    if (!msgRulesPanel.hidden) msgLoadRules();
+  });
+  msgRulesInit();
+  msgRenderHistory();
+  msgRefreshAll();
+}
+try {
+  msgInit();
+} catch (error) {
+  // 메시지 화면에 문제가 생겨도 로그인 유지 등 앱의 나머지 기능은 계속 동작해야 한다.
+  console.error('메시지 발송 화면을 준비하지 못했습니다.', error && error.message);
+}
 
 restoreSession();

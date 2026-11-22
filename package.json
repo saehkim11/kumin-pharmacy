@@ -8,10 +8,11 @@
     "test": "tests"
   },
   "scripts": {
-    "qa:static": "node --check app.js && node tests/dashboard-news-safety.cjs",
+    "qa:static": "node --check app.js && node --check qr-code.js && node --check messaging-core.js && node tests/dashboard-news-safety.cjs",
     "qa:smoke": "playwright test --config=playwright.ci.config.js",
-    "qa:ci": "npm run qa:static && npm run qa:smoke",
-    "test": "npm run qa:ci"
+    "qa:ci": "npm run qa:static && npm run qa:unit && npm run qa:smoke",
+    "test": "npm run qa:ci",
+    "qa:unit": "node tests/qr-code.test.cjs && node tests/messaging-core.test.cjs"
   },
   "keywords": [],
   "author": "",

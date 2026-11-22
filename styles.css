@@ -21,7 +21,7 @@ main{min-width:0;padding:34px clamp(22px,4vw,68px) 52px}.topbar{display:flex;ali
 .analysis-kpis article{display:flex;gap:12px;align-items:flex-start}.analysis-kpis .summary-body{min-width:0;flex:1}
 @media(max-width:560px){.summary-icon{width:36px;height:36px;font-size:17px;border-radius:9px}}.workspace-grid{display:grid;grid-template-columns:1.35fr .85fr;gap:14px;margin-bottom:20px}.focus-card,.activity-card{border-radius:12px;padding:25px}.focus-card{color:#eff5ff;background:linear-gradient(125deg,#1c3b68,#2f6fed)}.focus-card .eyebrow{color:#a9c7ff}.focus-card h2,.activity-card h2{margin:0 0 10px;font-size:21px;letter-spacing:-.04em}.focus-card p:not(.eyebrow){margin:0;max-width:500px;color:#d9e7fb;font-size:14px}.quick-actions{display:flex;gap:9px;margin-top:22px}.quick-actions button{border:0;border-radius:8px;padding:10px 13px;background:#fff;color:#224a81;font:inherit;font-weight:800;cursor:pointer}.quick-actions button+button{background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3)}.activity-card{border:1px solid var(--line);background:#fff;box-shadow:var(--shadow)}.activity-card ol{margin:14px 0 0;padding-left:21px;color:var(--muted);font-size:14px}.activity-card li+li{margin-top:8px}.panel{padding:24px}.panel-heading{margin-bottom:18px}.step-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.step-grid>div{padding:16px;border:1px solid var(--line);border-radius:9px;background:#fbfcfe}.step-grid b{display:inline-grid;place-items:center;width:23px;height:23px;border-radius:50%;background:var(--blue-soft);color:var(--blue);font-size:12px}.step-grid h3{margin:11px 0 5px;font-size:15px}.step-grid p,.empty-message{margin:0;color:var(--muted);font-size:13px;line-height:1.6}
 .toolbar{display:grid;grid-template-columns:1fr 120px auto;gap:9px;align-items:end;margin:22px 0 12px;max-width:860px}.toolbar label{grid-column:1/-1;color:#445066;font-size:13px;font-weight:700}.toolbar input,.toolbar select,.sale-footer select{min-width:0;width:100%;height:42px;padding:0 12px;border:1px solid #d9e0ea;border-radius:8px;background:#fff;color:var(--ink);font:inherit}.toolbar input:focus,.toolbar select:focus{outline:3px solid rgba(47,111,237,.15);border-color:var(--blue)}.toolbar .login-button{height:42px}.table-wrap{overflow:auto;margin-top:18px;border:1px solid var(--line);border-radius:9px}table{width:100%;min-width:600px;border-collapse:collapse;text-align:left}th,td{padding:13px 14px;border-bottom:1px solid var(--line)}th{background:#f8fafd;color:#66738a;font-size:12px;font-weight:700}td{font-size:14px}td:nth-child(3),td:nth-child(4){text-align:right;font-variant-numeric:tabular-nums}.sale-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px;padding:14px 0}.sale-footer strong{font-size:20px;letter-spacing:-.03em}.sale-footer>div{display:flex;gap:8px}.sale-footer select{width:100px}.sale-footer button{min-width:112px}
-.sale-toolbar{grid-template-columns:minmax(0,1fr) 100px 130px 150px 200px auto;gap:12px;max-width:1180px;margin-bottom:34px}.sale-pet-field{min-width:0;position:relative}.sale-pet-field label span{color:var(--muted);font-weight:400}.sale-product-picker{position:relative;min-width:0}.sale-toolbar label,.sale-toolbar .sale-quantity-field label,.sale-toolbar .sale-price-field label,.sale-toolbar .sale-date-field label{display:block;grid-column:auto;margin:0 0 6px}.sale-product-picker input[type="search"]{padding-right:34px}.sale-quantity-field,.sale-price-field,.sale-date-field{min-width:0}.input-hint{position:absolute;top:66px;left:0;width:100%;margin:0;color:var(--muted);font-size:11px;line-height:1.45}.product-suggestions{position:absolute;z-index:20;top:70px;left:0;right:0;max-height:296px;overflow:auto;padding:5px;border:1px solid #cfd9e8;border-radius:9px;background:#fff;box-shadow:0 14px 30px rgba(23,43,77,.16)}.product-suggestion{display:flex;width:100%;align-items:center;justify-content:space-between;gap:10px;padding:10px;border:0;border-radius:6px;background:#fff;color:var(--ink);font:inherit;text-align:left;cursor:pointer}.product-suggestion:hover,.product-suggestion.active{background:var(--blue-soft)}.product-suggestion span{display:grid;gap:2px;min-width:0}.product-suggestion b{overflow:hidden;font-size:14px;text-overflow:ellipsis;white-space:nowrap}.product-suggestion small{color:var(--muted);font-size:11px}.product-suggestion em{flex:none;color:#36527d;font-size:12px;font-style:normal;font-variant-numeric:tabular-nums}.suggestion-empty{margin:0;padding:10px;color:var(--muted);font-size:12px;line-height:1.5}.sale-footer{max-width:1180px}
+.sale-toolbar{grid-template-columns:minmax(0,1fr) 100px 130px 150px 200px auto;gap:12px;max-width:1180px;margin-bottom:34px}.sale-pet-field{min-width:0;position:relative}.sale-pet-field label span{color:var(--muted);font-weight:400}.sale-product-picker{position:relative;min-width:0}.sale-toolbar label,.sale-toolbar .sale-quantity-field label,.sale-toolbar .sale-price-field label,.sale-toolbar .sale-date-field label{display:block;grid-column:auto;margin:0 0 6px}.sale-product-picker input[type="search"]{padding-right:48px}.sale-product-mic{position:absolute;right:5px;top:50px;width:32px!important;height:32px!important;padding:0!important;border-radius:7px!important;font-size:16px;line-height:1}.sale-product-mic.listening{background:#e8590c;animation:pet-mic-pulse 1.2s ease-in-out infinite}.sale-quantity-field,.sale-price-field,.sale-date-field{min-width:0}.input-hint{position:absolute;top:66px;left:0;width:100%;margin:0;color:var(--muted);font-size:11px;line-height:1.45}.product-suggestions{position:absolute;z-index:20;top:70px;left:0;right:0;max-height:296px;overflow:auto;padding:5px;border:1px solid #cfd9e8;border-radius:9px;background:#fff;box-shadow:0 14px 30px rgba(23,43,77,.16)}.product-suggestion{display:flex;width:100%;align-items:center;justify-content:space-between;gap:10px;padding:10px;border:0;border-radius:6px;background:#fff;color:var(--ink);font:inherit;text-align:left;cursor:pointer}.product-suggestion:hover,.product-suggestion.active{background:var(--blue-soft)}.product-suggestion span{display:grid;gap:2px;min-width:0}.product-suggestion b{overflow:hidden;font-size:14px;text-overflow:ellipsis;white-space:nowrap}.product-suggestion small{color:var(--muted);font-size:11px}.product-suggestion em{flex:none;color:#36527d;font-size:12px;font-style:normal;font-variant-numeric:tabular-nums}.suggestion-empty{margin:0;padding:10px;color:var(--muted);font-size:12px;line-height:1.5}.sale-footer{max-width:1180px}
 .purchase-form-grid{display:grid;grid-template-columns:190px 150px minmax(220px,1fr) 100px 130px auto;gap:10px;align-items:end;margin-top:22px}.purchase-form-grid>div{min-width:0}.purchase-form-grid label{display:block;margin-bottom:6px;color:#445066;font-size:13px;font-weight:700}.purchase-form-grid label span{color:var(--muted);font-weight:400}.purchase-form-grid input,.purchase-form-grid select{width:100%;height:42px;padding:0 10px;border:1px solid #d9e0ea;border-radius:8px;background:#fff;color:var(--ink);font:inherit}.purchase-form-grid input:focus,.purchase-form-grid select:focus{outline:3px solid rgba(47,111,237,.15);border-color:var(--blue)}.purchase-form-grid .login-button{height:42px;white-space:nowrap}
 .purchase-supplier-field .field-label-row{margin-bottom:6px}.purchase-supplier-field .field-label-row label{margin:0}
 .new-supplier-row[hidden]{display:none}.new-supplier-row{display:flex;gap:6px;margin-top:6px}.new-supplier-row input{flex:1;height:38px;padding:0 10px;border:1px solid #d9e0ea;border-radius:8px;background:#fff;color:var(--ink);font:inherit;min-width:0}.new-supplier-row .link-button{white-space:nowrap}
@@ -303,8 +303,6 @@ html[data-theme="dark"] .today-schedule-badge{background:#0f1726}
 
 /* 처음 방문하는 보호자·반려동물 등록: 처음 보는 사람도 바로 알아보게 눈에 띄는 배너+큰 버튼 */
 .pet-new-banner{display:flex;align-items:center;justify-content:space-between;gap:18px;margin:16px 0 20px;padding:18px 22px;border:1px solid #cfe0fb;border-radius:12px;background:var(--blue-soft)}
-.messaging-mock{margin-top:18px;padding:18px;border:1px dashed var(--line);border-radius:12px;background:var(--paper)}.messaging-mock-title{margin:0 0 12px;color:var(--muted);font-size:12px;font-weight:700}.messaging-mock-row{display:flex;align-items:center;gap:13px;padding:13px 0}.messaging-mock-row+.messaging-mock-row{border-top:1px solid var(--line)}.messaging-mock-row .summary-body{flex:1;min-width:0}.messaging-mock-row .summary-body strong{display:block;font-size:14px}.messaging-mock-row .summary-body span{display:block;margin-top:2px;color:var(--muted);font-size:12px}.messaging-mock-badge{flex:none;padding:5px 11px;border-radius:999px;background:var(--white);border:1px solid var(--line);color:var(--muted);font-size:12px;font-weight:700;white-space:nowrap}.messaging-mock-badge.done{background:#e5f6ee;color:#14734f;border-color:transparent}
-@media(max-width:560px){.messaging-mock-row{flex-wrap:wrap}.messaging-mock-badge{margin-left:55px}}
 .pet-new-banner strong{display:block;font-size:16px;color:var(--ink)}
 .pet-new-banner p{margin:4px 0 0;color:var(--muted);font-size:13px}
 .pet-new-cta{flex:none;height:48px;padding:0 22px;font-size:15px;font-weight:800;white-space:nowrap}
@@ -365,6 +363,11 @@ html[data-theme="dark"] .submit-button:not(:disabled):hover,
 html[data-theme="dark"] .submit-button:not(:disabled):active{background:#215dcc;color:#fff}
 html[data-theme="dark"] .login-button:disabled,
 html[data-theme="dark"] .submit-button:disabled{background:#2b3b55;color:#aab8cd;cursor:default}
+/* 판매 상품 음성 검색은 작은 아이콘이 아닌, 바로 알아볼 수 있는 버튼으로 표시한다. */
+.sale-product-search-row{display:flex;align-items:stretch;gap:8px}
+.sale-product-search-row #saleProductSearch{min-width:0;flex:1;padding-right:12px}
+.sale-product-search-row .sale-product-mic{position:static;flex:none;width:44px!important;min-width:44px;height:44px!important;padding:0!important;font-size:18px;line-height:1}
+@media(max-width:560px){.sale-product-search-row .sale-product-mic{width:44px!important;min-width:44px;padding:0!important}}
 html[data-theme="dark"] .product-suggestion:hover,
 html[data-theme="dark"] .product-suggestion.active{background:var(--blue-soft);box-shadow:inset 0 0 0 2px var(--blue)}
 html[data-theme="dark"] .product-suggestion em{color:var(--ink)}
@@ -384,3 +387,140 @@ html[data-theme="dark"] .product-suggestion em{color:var(--ink)}
   .legacy-sales-chart .bar-chart-wrap{overflow-x:auto}
   .legacy-sales-chart .bar-item{font-size:12px}
 }
+
+/* 메시지 발송 화면 */
+.msg-panel{max-width:1180px}
+.msg-grid{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:28px;align-items:start;margin-top:18px}
+.msg-form{min-width:0}
+.msg-step{margin-bottom:20px}
+.msg-step input,.msg-step textarea,.msg-clinic input{width:100%;min-height:46px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--white);color:var(--ink);font:inherit;font-size:16px;box-sizing:border-box}
+.msg-step textarea{min-height:130px;line-height:1.6;resize:vertical}
+.msg-step input[type="date"],.msg-step input[type="time"]{max-width:240px}
+.msg-choices{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.msg-choice{min-height:46px;padding:10px 16px;border:1px solid var(--line);border-radius:10px;background:var(--white);color:var(--ink);font:inherit;font-size:15px;font-weight:700;line-height:1.3;cursor:pointer;text-align:left}
+.msg-choice:hover{background:var(--blue-soft)}
+.msg-choice[aria-pressed="true"]{background:var(--blue);border-color:var(--blue);color:#fff}
+.msg-token-group{display:contents}
+.msg-token-group[hidden]{display:none}
+.msg-saved-item{display:inline-flex;gap:4px;max-width:100%}
+.msg-saved-item .msg-choice:first-child{min-width:0;overflow-wrap:anywhere}
+.msg-remove{min-width:46px;padding:10px 12px;text-align:center}
+.msg-hint{margin:8px 0 0;color:var(--muted);font-size:14px}
+.msg-clinic{margin:0 0 12px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--paper)}
+.msg-clinic summary{cursor:pointer;font-size:15px;font-weight:700}
+.msg-clinic label{margin-top:12px}
+.msg-warning{margin:8px 0 0;color:#b4540a;font-size:14px;font-weight:700}
+.msg-qr-box{position:sticky;top:16px;padding:18px;border:1px solid var(--line);border-radius:12px;background:var(--paper);text-align:center}
+.msg-qr-box h3{margin:0 0 12px;font-size:16px}
+#msgQr{min-height:60px}
+#msgQr svg{display:block;width:100%;max-width:280px;height:auto;margin:0 auto;border-radius:8px}
+.msg-qr-hint{margin:12px 0 0;font-size:15px;line-height:1.55;color:var(--ink)}
+@media(max-width:900px){.msg-grid{grid-template-columns:minmax(0,1fr)}.msg-qr-box{position:static}}
+@media(max-width:560px){.msg-choice{flex:1 1 calc(50% - 8px)}.msg-saved-item{flex:1 1 100%}.msg-step input[type="date"],.msg-step input[type="time"]{max-width:none}}
+html[data-theme="dark"] .msg-choice[aria-pressed="true"]{color:#0d1b32}
+
+/* 메시지 발송: 보낸 문자 기록 · 수신 상태 · 알림 이력 */
+.msg-sent-button{display:block;width:100%;min-height:56px;margin-top:14px;padding:12px 16px;border:0;border-radius:12px;background:var(--blue);color:#fff;font:inherit;font-size:18px;font-weight:800;cursor:pointer}
+.msg-sent-button:disabled{background:#6a8f7a;cursor:default}
+html[data-theme="dark"] .msg-sent-button{color:#0d1b32}
+.msg-sent-note{margin:8px 0 0;font-size:14px;color:var(--muted)}
+.msg-dup-hint{margin:10px 0 0;padding:10px 12px;border-radius:10px;background:#fff4e0;color:#8a4b08;font-size:14px;font-weight:700;text-align:left}
+html[data-theme="dark"] .msg-dup-hint{background:#3a2b12;color:#ffd699}
+.msg-unsent{margin:0 0 14px;padding:14px;border:2px solid var(--blue);border-radius:12px;background:var(--white);text-align:left}
+.msg-unsent p{margin:0 0 10px;font-size:15px;font-weight:700;overflow-wrap:anywhere}
+.msg-pref{padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--paper)}
+.msg-pref-status{margin:0 0 8px;font-size:15px;font-weight:700}
+.msg-pref-warning{margin:0 0 10px;padding:10px 12px;border-radius:10px;background:#fde8e8;color:#9b1c1c;font-size:15px;font-weight:800}
+html[data-theme="dark"] .msg-pref-warning{background:#4a1d1d;color:#ffb4b4}
+.msg-pref-confirm{margin-top:12px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--white)}
+.msg-pref-confirm p{margin:0 0 8px;font-size:15px;font-weight:700}
+.msg-history{max-width:1180px;margin-top:20px}
+.msg-history-filters{display:grid;gap:14px;margin:16px 0 8px}
+.msg-history-filters input{width:100%;max-width:420px;min-height:46px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--white);color:var(--ink);font:inherit;font-size:16px;box-sizing:border-box}
+.msg-history-date{margin:20px 0 8px;font-size:16px;color:var(--navy)}
+html[data-theme="dark"] .msg-history-date{color:var(--ink)}
+.msg-history-sub{margin:28px 0 10px;font-size:16px}
+.msg-history-card{display:grid;gap:8px;min-width:0;margin:0 0 10px;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--white)}
+.msg-history-card[data-status="void"]{opacity:.62}
+.msg-history-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;min-width:0}
+.msg-history-time{font-size:15px;font-weight:800;color:var(--muted)}
+.msg-history-pet{font-size:16px;overflow-wrap:anywhere}
+.msg-history-due{font-size:14px;color:var(--muted)}
+.msg-badge{display:inline-block;padding:4px 10px;border-radius:999px;border:1px solid var(--line);background:var(--paper);font-size:13px;font-weight:800;white-space:nowrap}
+.msg-badge-sent{background:#e5f6ee;border-color:transparent;color:#14734f}
+.msg-badge-skip{background:#eceff3;border-color:transparent;color:#4a5568}
+.msg-badge-void{background:transparent;border-style:dashed;color:var(--muted)}
+html[data-theme="dark"] .msg-badge-sent{background:#16382b;color:#8ee0b6}
+html[data-theme="dark"] .msg-badge-skip{background:#273044;color:#c7d2e4}
+.msg-history-snippet{margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:14px}
+.msg-history-text{margin:0;padding:10px 12px;border-radius:8px;background:var(--paper);white-space:pre-wrap;overflow-wrap:anywhere;font-size:15px;line-height:1.6}
+.msg-history-actions{margin-top:0}
+.msg-pref-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:10px 0;border-bottom:1px solid var(--line)}
+.msg-pref-row strong{min-width:6em;overflow-wrap:anywhere}
+.msg-pref-row-label{font-size:14px;color:var(--muted)}
+.msg-pref-row-label.is-optout{color:#9b1c1c;font-weight:700}
+html[data-theme="dark"] .msg-pref-row-label.is-optout{color:#ffb4b4}
+@media(max-width:560px){.msg-history-actions .msg-choice,.msg-pref-row .msg-choice{flex:1 1 calc(50% - 8px)}}
+/* 메시지 화면의 숨김 처리는 항상 이긴다(버튼 등에 display를 준 규칙이 hidden을 덮지 않게) */
+#messaging [hidden]{display:none !important}
+/* 알림 이력 개편: 요약·보호자별 묶음·문의 전화 켜기 */
+.msg-history-summary{margin:12px 0 0;padding:12px 14px;border-radius:10px;background:var(--blue-soft);color:var(--ink);font-size:16px;font-weight:800}
+.msg-history-date{display:flex;align-items:baseline;gap:8px}
+.msg-owner-card{margin:0 0 12px;border:1px solid var(--line);border-radius:12px;background:var(--white)}
+.msg-owner-summary{display:block;padding:14px;cursor:pointer;list-style:none}
+.msg-owner-summary::-webkit-details-marker{display:none}
+.msg-owner-summary::before{content:'▸ ';color:var(--blue);font-weight:800}
+.msg-owner-card[open]>.msg-owner-summary::before{content:'▾ '}
+.msg-owner-name{display:inline;font-size:18px;overflow-wrap:anywhere}
+.msg-owner-pets{display:block;margin-top:6px;font-size:15px;font-weight:700;overflow-wrap:anywhere}
+.msg-owner-stat{display:block;margin-top:4px;font-size:14px;color:var(--muted)}
+.msg-owner-rows{padding:0 12px 4px}
+.msg-owner-rows .msg-history-card{margin:0 0 10px}
+.msg-check{display:flex;align-items:center;gap:10px;margin-top:14px;font-size:15px;font-weight:700;cursor:pointer}
+.msg-clinic input[type="checkbox"]{flex:none;width:24px;min-height:24px;height:24px;padding:0}
+.msg-history-filters .msg-label{display:block;margin:0 0 8px;font-size:15px;font-weight:800;color:var(--ink)}
+/* 공유 업무: 반려동물 연결 */
+.task-pet-field{grid-column:1 / -1;max-width:460px}
+.task-detail-pet{margin:8px 0;font-size:15px;font-weight:700;overflow-wrap:anywhere}
+#taskDetailNotify{width:100%;min-height:48px;margin:6px 0 12px;font-size:16px}
+#taskDetailNotify[hidden],.task-detail-pet[hidden]{display:none}
+/* 알림 주기 설정 */
+.msg-rules{max-width:1180px;margin-top:20px}
+.msg-rule-row,.msg-rule-item,.msg-rule-form{display:grid;gap:10px;min-width:0;margin:0 0 10px;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--white)}
+.msg-rule-form{margin-top:12px;background:var(--paper)}
+.msg-rule-name,.msg-rule-form-name{font-size:17px;overflow-wrap:anywhere}
+.msg-rule-field{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:15px;font-weight:700}
+.msg-rule-field input{width:96px;min-height:46px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--white);color:var(--ink);font:inherit;font-size:16px;text-align:right;box-sizing:border-box}
+.msg-rule-text{margin:0;font-size:15px;overflow-wrap:anywhere}
+.msg-rule-item .msg-hint{margin:0}
+.msg-rule-row .msg-rule-save,.msg-rule-form .msg-choice[type="submit"]{justify-self:start;min-width:120px;background:var(--blue);border-color:var(--blue);color:#fff}
+html[data-theme="dark"] .msg-rule-row .msg-rule-save,html[data-theme="dark"] .msg-rule-form .msg-choice[type="submit"]{color:#0d1b32}
+.suggestion-more{margin:0;padding:8px 12px;color:var(--muted);font-size:13px}
+@media(max-width:560px){.msg-rule-field input{width:84px}}
+/* 알림 주기 설정: 넓은 화면에서는 분류 줄의 입력 칸과 저장 버튼을 한 줄에 놓는다 */
+@media(min-width:900px){
+  .msg-rule-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px 22px}
+  .msg-rule-row .msg-rule-name{flex:0 0 100%}
+  .msg-rule-row .msg-hint{flex:0 0 100%;margin:0}
+  .msg-rule-row .msg-rule-save{justify-self:auto}
+}
+
+
+/* 판매 화면: 다음 알림일·수신 동의(알림 3단계, 관리자 전용) */
+.sale-next-due{display:grid;gap:12px;margin-top:16px;max-width:1180px}
+.sale-next-due[hidden],.sale-consent[hidden]{display:none !important}
+.sale-due-item{display:grid;gap:8px;min-width:0;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--white)}
+.sale-due-name{font-size:17px;overflow-wrap:anywhere}
+.sale-due-text{margin:0;font-size:15px;line-height:1.5;overflow-wrap:anywhere}
+.sale-due-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.sale-due-actions .msg-choice{min-width:64px}
+.sale-due-date-label{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:15px;font-weight:700}
+.sale-due-date,.sale-due-custom-input{min-height:44px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;font:inherit;font-size:15px;background:var(--white);color:var(--ink)}
+.sale-due-custom-input{width:88px;text-align:right}
+.sale-due-custom-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:15px}
+.sale-due-note{margin:0;min-height:0}
+.sale-due-note:empty{display:none}
+.sale-consent{display:grid;gap:4px;margin-top:10px}
+.sale-consent-check{display:flex;align-items:flex-start;gap:8px;font-size:15px;font-weight:700;line-height:1.4}
+.sale-consent-check input{flex:none;width:22px;height:22px;margin-top:1px}
+@media(max-width:560px){.sale-due-actions .msg-choice{flex:1 1 calc(50% - 8px)}}

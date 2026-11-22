@@ -23,7 +23,7 @@
           <button class="nav-button" data-view="tasks">공유 업무</button>
           <button class="nav-button" data-view="analytics">분석</button>
           <button class="nav-button" data-view="legacySales" id="legacySalesNav" hidden>매출 분석</button>
-          <button class="nav-button" data-view="messaging" id="messagingNav" hidden>메시지 발송 (검토 중)</button>
+          <button class="nav-button" data-view="messaging" id="messagingNav" hidden>메시지 발송</button>
           <button class="nav-button" data-view="structure" id="structureNav" hidden>사이트 구조</button>
         </nav>
         <p class="role-badge" id="roleBadge" aria-live="polite">현재 상태: 로그인 전</p>
@@ -84,7 +84,10 @@
             <div class="toolbar sale-toolbar">
               <div class="sale-product-picker">
                 <label for="saleProductSearch">상품 선택</label>
-                <input id="saleProductSearch" type="search" placeholder="상품명·코드·초성을 입력하세요" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="saleProductSuggestions" disabled />
+                <div class="sale-product-search-row">
+                  <input id="saleProductSearch" type="search" placeholder="상품명·코드·초성을 입력하세요" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="saleProductSuggestions" disabled />
+                  <button class="login-button sale-product-mic" id="saleProductMicButton" type="button" disabled title="마이크로 상품 이름 말하기" aria-label="마이크로 상품 이름 말하기">🎤</button>
+                </div>
                 <input id="saleProduct" type="hidden" value="" />
                 <div class="product-suggestions" id="saleProductSuggestions" role="listbox" hidden></div>
                 <p class="input-hint" id="saleProductHint">로그인하면 상품을 검색할 수 있습니다.</p>
@@ -109,10 +112,15 @@
                 <input id="salePetSearch" type="search" placeholder="이름(보호자) — 안 고르면 미지정, 초성도 가능" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="salePetSuggestions" disabled />
                 <input id="salePetId" type="hidden" value="" />
                 <div class="product-suggestions" id="salePetSuggestions" role="listbox" hidden></div>
+                <div class="sale-consent" id="saleConsent" hidden>
+                  <label class="sale-consent-check"><input id="saleConsentCheck" type="checkbox" disabled /> 복용 시기 안내 문자를 받기로 했어요</label>
+                  <p class="msg-hint" id="saleConsentStatus" aria-live="polite"></p>
+                </div>
               </div>
               <button class="login-button" id="addSaleItem" type="button" disabled>판매 목록에 담기</button>
             </div>
             <div class="table-wrap" hidden id="saleTableWrap"><table><thead><tr><th>상품명</th><th>수량</th><th>금액</th><th>반려동물</th><th></th></tr></thead><tbody id="saleRows"></tbody></table></div>
+            <section class="sale-next-due" id="saleNextDue" aria-live="polite" hidden></section>
             <div class="sale-footer" hidden id="saleFooter"><strong id="saleTotal">합계 0원</strong><div><select id="paymentMethod"><option value="card">카드</option><option value="cash">현금</option></select><button class="login-button" id="submitSale" type="button">판매 등록</button></div></div>
             <p class="empty-message" id="saleMessage" role="status">로그인하면 판매를 등록할 수 있습니다.</p>
             <section class="sales-history" id="salePetHistorySection" hidden>
@@ -289,26 +297,141 @@
         </section>
 
         <section class="view" id="messaging">
-          <section class="panel">
-            <p class="eyebrow">검토 중 · 아직 만들지 않음</p><h2>메시지 발송</h2>
-            <p class="empty-message">보호자에게 예방접종 안내, 예약 확인 같은 문자·카카오톡을 자동으로 보내는 기능입니다. 다른 동물병원 프로그램(OpenVPM)에서 보고 참고용으로 메뉴만 먼저 만들어 두었습니다. 아래는 화면이 생기면 이런 모습일 거라는 예시이고, 실제로 문자를 보내는 기능은 아직 없습니다.</p>
-            <div class="notice">
-              <strong>지금 당장은 만들지 않은 이유</strong>
-              <p>문자·카카오톡을 실제로 보내려면 외부 발송 업체(예: 카카오 비즈메시지, 알리고 등)에 별도로 가입하고, 보낼 때마다 비용이 듭니다. 발신 번호 등록 같은 준비도 필요해서, 꼭 필요하다고 결정되면 그때 별도로 진행하는 게 좋습니다.</p>
-            </div>
-            <div class="messaging-mock" aria-hidden="true">
-              <p class="messaging-mock-title">예시 화면 (실제로 동작하지 않음)</p>
-              <div class="messaging-mock-row">
-                <i class="summary-icon c-blue">💬</i>
-                <div class="summary-body"><strong>보리 (김현주)</strong><span>예방접종 안내 문자 · 내일 오전 10시 예약</span></div>
-                <span class="messaging-mock-badge wait">발송 대기</span>
+          <section class="panel msg-panel">
+            <p class="eyebrow">접종 안내 문자 · 관리자 전용</p><h2>메시지 발송</h2>
+            <p class="empty-message">문구를 만들고 폰 카메라로 QR을 비추면, 폰의 문자 앱에 받는 사람과 내용이 채워져요. 폰에서 전송만 누르면 됩니다.</p>
+            <div class="msg-grid">
+              <div class="msg-form">
+                <div class="msg-step sale-pet-field">
+                  <label for="msgPetSearch">반려동물</label>
+                  <input id="msgPetSearch" type="search" placeholder="이름이나 초성을 입력하세요 (예: ㅂㄹ)" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="msgPetSuggestions" />
+                  <div class="product-suggestions" id="msgPetSuggestions" role="listbox" hidden></div>
+                  <p class="msg-hint" id="msgLastVaccine" hidden></p>
+                </div>
+                <div class="msg-step msg-pref" id="msgPref" hidden>
+                  <span class="msg-label">이 보호자의 안내 문자 수신</span>
+                  <p class="msg-pref-status" id="msgPrefStatus"></p>
+                  <p class="msg-pref-warning" id="msgPrefWarning" role="alert" hidden>문자를 원하지 않는 분이에요. 보내지 않는 것이 좋아요.</p>
+                  <div class="msg-choices" role="group" aria-label="안내 수신 상태 고치기">
+                    <button class="msg-choice" id="msgPrefConsent" type="button">안내 받기로 함</button>
+                    <button class="msg-choice" id="msgPrefOptout" type="button">안내 안 받음</button>
+                    <button class="msg-choice" id="msgPrefClear" type="button">표시 지우기</button>
+                  </div>
+                  <div class="msg-pref-confirm" id="msgPrefConfirm" hidden>
+                    <p id="msgPrefConfirmText">문자를 원하지 않는다고 표시된 분이에요. 정말 바꿀까요?</p>
+                    <div class="msg-choices">
+                      <button class="msg-choice" id="msgPrefConfirmYes" type="button">바꿀게요</button>
+                      <button class="msg-choice" id="msgPrefConfirmNo" type="button">그대로 둘게요</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="msg-step">
+                  <label for="msgPhone">받는 번호</label>
+                  <input id="msgPhone" type="tel" inputmode="numeric" placeholder="반려동물을 고르면 자동으로 채워져요" autocomplete="off" />
+                </div>
+                <div class="msg-step">
+                  <span class="msg-label" id="msgTypeLabel">어떤 안내인가요?</span>
+                  <div class="msg-choices" id="msgTypeChoices" role="group" aria-labelledby="msgTypeLabel"></div>
+                </div>
+                <div class="msg-step" id="msgVaccineStep">
+                  <span class="msg-label" id="msgVaccineLabel">접종 종류</span>
+                  <div class="msg-choices" id="msgVaccineChoices" role="group" aria-labelledby="msgVaccineLabel"></div>
+                  <input id="msgVaccineOther" type="text" placeholder="직접 입력" autocomplete="off" hidden />
+                </div>
+                <div class="msg-step" id="msgDateStep">
+                  <label for="msgDueDate">날짜</label>
+                  <input id="msgDueDate" type="date" />
+                  <div class="msg-choices msg-quick" id="msgDueQuick" role="group" aria-label="날짜 빠르게 고르기"></div>
+                  <p class="msg-warning" id="msgPastWarning" hidden>이미 지난 날짜예요.</p>
+                </div>
+                <div class="msg-step" id="msgTimeStep" hidden>
+                  <label for="msgTime">시간</label>
+                  <input id="msgTime" type="time" value="10:00" />
+                </div>
+                <div class="msg-step">
+                  <label for="msgText">문구 (고칠 수 있어요)</label>
+                  <textarea id="msgText" rows="5" placeholder="위에서 반려동물과 날짜를 고르면 문구가 만들어져요."></textarea>
+                  <div class="msg-choices msg-tools">
+                    <span id="msgTokenButtons" class="msg-token-group" hidden></span>
+                    <button class="msg-choice" id="msgSpeak" type="button" hidden>🎤 말하기</button>
+                    <button class="msg-choice" id="msgSavePhrase" type="button" hidden>자주 쓰는 문구로 저장</button>
+                  </div>
+                  <p class="msg-hint" id="msgSpeakHint" hidden>보호자 이름·번호는 말하지 말고 위 버튼으로 넣어 주세요.</p>
+                  <div class="msg-choices msg-saved" id="msgSavedPhrases" role="group" aria-label="자주 쓰는 문구" hidden></div>
+                  <p class="msg-hint" id="msgCounter"></p>
+                </div>
+                <details class="msg-clinic" id="msgClinic" open>
+                  <summary>병원 정보 (문구 맨 앞과 끝에 들어가요 · 고칠 수 있어요)</summary>
+                  <label for="msgClinicName">병원 이름</label>
+                  <input id="msgClinicName" type="text" autocomplete="off" />
+                  <label for="msgClinicPhone">문의 전화번호</label>
+                  <input id="msgClinicPhone" type="tel" autocomplete="off" />
+                  <label class="msg-check" for="msgClinicPhoneOn"><input id="msgClinicPhoneOn" type="checkbox" /> 문구 끝에 문의 전화번호도 넣기</label>
+                  <p class="msg-hint">문의 전화번호는 기본으로 문구 끝에 들어가요. 넣고 싶지 않을 때만 꺼 주세요.</p>
+                </details>
+                <p class="msg-hint" id="msgClinicHint" hidden>병원 이름을 넣어 두면 받는 분이 누가 보냈는지 바로 알 수 있어요.</p>
               </div>
-              <div class="messaging-mock-row">
-                <i class="summary-icon c-green">💬</i>
-                <div class="summary-body"><strong>초코 (홍고은)</strong><span>진료 후 안내 문자 · 다음 방문 추천일 안내</span></div>
-                <span class="messaging-mock-badge done">발송 완료</span>
-              </div>
+              <aside class="msg-qr-box">
+                <div class="msg-unsent" id="msgUnsentPrompt" role="status" hidden>
+                  <p id="msgUnsentText"></p>
+                  <div class="msg-choices">
+                    <button class="msg-choice" id="msgUnsentYes" type="button">보냈어요</button>
+                    <button class="msg-choice" id="msgUnsentNo" type="button">안 보냈어요</button>
+                  </div>
+                </div>
+                <h3>폰으로 보내기</h3>
+                <div id="msgQr"></div>
+                <p class="msg-qr-hint" id="msgQrHint" aria-live="polite">반려동물을 고르면 여기에 QR이 나타나요.</p>
+                <button class="msg-sent-button" id="msgSent" type="button" hidden>폰에서 보냈어요</button>
+                <p class="msg-sent-note" id="msgSentNote" aria-live="polite"></p>
+                <p class="msg-dup-hint" id="msgDupHint" role="status" hidden></p>
+              </aside>
             </div>
+          </section>
+
+          <section class="panel msg-history" id="msgHistory">
+            <p class="eyebrow">알림 이력 · 관리자 전용</p><h2>보낸 알림 이력</h2>
+            <p class="empty-message">보낸 문자를 날짜별로, 또는 보호자·반려동물별로 모아 볼 수 있어요. 잘못 기록했다면 [되돌리기]를 눌러 주세요.</p>
+            <p class="msg-history-summary" id="msgHistorySummary" aria-live="polite"></p>
+            <div class="msg-history-filters">
+              <div><span class="msg-label" id="msgHistoryViewLabel">보는 방법</span><div class="msg-choices" id="msgHistoryView" role="group" aria-labelledby="msgHistoryViewLabel"></div></div>
+              <div><span class="msg-label" id="msgHistoryRangeLabel">기간</span><div class="msg-choices" id="msgHistoryRange" role="group" aria-labelledby="msgHistoryRangeLabel"></div></div>
+              <div>
+                <span class="msg-label" id="msgHistoryStatusLabel">어떤 기록을 볼까요</span>
+                <div class="msg-choices" id="msgHistoryStatus" role="group" aria-labelledby="msgHistoryStatusLabel"></div>
+                <p class="msg-hint" id="msgHistoryStatusHelp">보낸 문자는 [폰에서 보냈어요]를 눌러 기록한 문자예요. 되돌림은 잘못 눌러서 취소한 기록이에요.</p>
+              </div>
+              <div><label class="msg-label" for="msgHistorySearch">찾기</label><input id="msgHistorySearch" type="search" placeholder="반려동물·보호자 이름 (초성도 가능)" autocomplete="off" /></div>
+            </div>
+            <div id="msgHistoryList"></div>
+            <p class="empty-message" id="msgHistoryEmpty" hidden>아직 보낸 알림이 없어요.</p>
+            <h3 class="msg-history-sub">안내 수신 상태 목록</h3>
+            <div id="msgPrefList"></div>
+            <p class="empty-message" id="msgPrefListEmpty" hidden>표시해 둔 보호자가 없어요.</p>
+          </section>
+
+          <section class="panel msg-rules" id="msgRules" hidden>
+            <p class="eyebrow">알림 주기 설정 · 관리자 전용</p><h2>알림 주기 설정</h2>
+            <p class="empty-message">약이나 사료를 한 번 사면 며칠 뒤에 다시 필요한지 약·상품 하나씩 정해 두면, 나중에 알림 대상을 자동으로 찾아 드려요. 판매 화면에서 처음 팔 때 바로 정할 수도 있어요. 정하지 않은 것은 알림 대상이 아니에요.</p>
+            <p class="msg-warning" id="msgRuleLoadNote" role="status" hidden>설정을 불러오지 못했어요. 지금 보이는 값은 이전에 불러온 것이에요. 잠시 뒤 다시 열어 주세요.</p>
+            <h3 class="msg-history-sub">약·상품 하나씩 정하기</h3>
+            <p class="msg-hint">접종처럼 정해진 간격으로 알릴 약은 "접종 안내"로, 다시 사야 하는 약은 "재구매 안내"로 정해요.</p>
+            <div class="msg-step sale-pet-field msg-rule-search">
+              <label for="msgRuleProductSearch">약·상품 찾기</label>
+              <input id="msgRuleProductSearch" type="search" placeholder="이름이나 초성을 입력하세요 (예: ㅅㅈㅅㅊ)" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="msgRuleProductSuggestions" />
+              <div class="product-suggestions" id="msgRuleProductSuggestions" role="listbox" hidden></div>
+            </div>
+            <form class="msg-rule-form" id="msgRuleProductForm" hidden>
+              <strong class="msg-rule-form-name" id="msgRuleProductName"></strong>
+              <div class="msg-choices" id="msgRuleKinds" role="group" aria-label="알림 종류"></div>
+              <p class="msg-warning" id="msgRuleProductAd" hidden>재구매 안내는 광고로 볼 수 있어요. 보내기 전에 확인하세요.</p>
+              <label class="msg-rule-field" for="msgRuleProductInterval">며칠마다 다시 필요해요 <input id="msgRuleProductInterval" type="text" inputmode="numeric" maxlength="4" autocomplete="off" /> 일</label>
+              <label class="msg-rule-field" for="msgRuleProductLead">며칠 전부터 알려요 <input id="msgRuleProductLead" type="text" inputmode="numeric" maxlength="3" autocomplete="off" placeholder="7" /> 일</label>
+              <button class="msg-choice msg-sent-save" id="msgRuleProductSave" type="submit">저장</button>
+            </form>
+            <p class="msg-hint" id="msgRuleProductNote" aria-live="polite"></p>
+            <div id="msgRuleProductList"></div>
+            <p class="empty-message" id="msgRuleProductEmpty" hidden>아직 정해 둔 약·상품이 없어요.</p>
           </section>
         </section>
 
@@ -338,9 +461,9 @@
           </section>
           <section class="task-layout">
             <div class="panel calendar-panel"><div class="calendar-weekdays"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div><div id="taskCalendar" class="task-calendar"></div></div>
-            <aside class="panel task-detail"><p class="eyebrow">TASK DETAIL</p><h2 id="taskDetailTitle">업무를 선택하세요</h2><p id="taskDetailMeta" class="empty-message">달력에서 업무가 있는 날짜를 선택하면 상세 내용과 댓글을 볼 수 있습니다.</p><div id="taskStatusControls" hidden><label for="taskStatus">업무 상태</label><select id="taskStatus"><option value="todo">할 일</option><option value="doing">진행 중</option><option value="done">완료</option><option value="hold">보류</option></select><button id="saveTaskStatus" type="button" class="login-button">상태 저장</button></div><div id="commentList" class="comment-list"></div><form id="commentForm" hidden><label for="commentBody">댓글</label><textarea id="commentBody" maxlength="1000" placeholder="업무 진행 상황이나 전달 사항을 남기세요"></textarea><button class="login-button" type="submit">댓글 등록</button></form></aside>
+            <aside class="panel task-detail"><p class="eyebrow">TASK DETAIL</p><h2 id="taskDetailTitle">업무를 선택하세요</h2><p id="taskDetailMeta" class="empty-message">달력에서 업무가 있는 날짜를 선택하면 상세 내용과 댓글을 볼 수 있습니다.</p><p id="taskDetailPet" class="task-detail-pet" hidden></p><button id="taskDetailNotify" type="button" class="login-button" hidden>알림 보내기</button><div id="taskStatusControls" hidden><label for="taskStatus">업무 상태</label><select id="taskStatus"><option value="todo">할 일</option><option value="doing">진행 중</option><option value="done">완료</option><option value="hold">보류</option></select><button id="saveTaskStatus" type="button" class="login-button">상태 저장</button></div><div id="commentList" class="comment-list"></div><form id="commentForm" hidden><label for="commentBody">댓글</label><textarea id="commentBody" maxlength="1000" placeholder="업무 진행 상황이나 전달 사항을 남기세요"></textarea><button class="login-button" type="submit">댓글 등록</button></form></aside>
           </section>
-          <section class="panel owner-task-form" id="ownerTaskForm" hidden><p class="eyebrow">OWNER ONLY</p><h2>새 업무 등록</h2><p class="empty-message">예약(방문) 건은 시간을 넣어주세요 — 당일 예약이 대시보드에 시간순으로 표시됩니다.</p><form id="newTaskForm" class="new-task-grid"><div><label for="newTaskTitle">업무·예약 제목</label><input id="newTaskTitle" required maxlength="120" placeholder="업무·예약 제목 (예: 홍길동(보리) 접종)"/></div><div><label for="newTaskDueDate">업무일</label><input id="newTaskDueDate" type="date"/></div><div><label for="newTaskTime">예약 시간 (선택)</label><input id="newTaskTime" type="time" title="예약 시간(선택)"/></div><div><label for="newTaskAssignee">담당자</label><select id="newTaskAssignee" required><option value="">담당자 선택</option></select></div><div><label for="newTaskPriority">중요도</label><select id="newTaskPriority"><option value="normal">보통</option><option value="high">높음</option><option value="low">낮음</option></select></div><button class="login-button" type="submit">업무 등록</button></form></section>
+          <section class="panel owner-task-form" id="ownerTaskForm" hidden><p class="eyebrow">OWNER ONLY</p><h2>새 업무 등록</h2><p class="empty-message">예약(방문) 건은 시간을 넣어주세요 — 당일 예약이 대시보드에 시간순으로 표시됩니다.</p><form id="newTaskForm" class="new-task-grid"><div class="sale-pet-field task-pet-field"><label for="newTaskPetSearch">반려동물 <span>(선택)</span></label><input id="newTaskPetSearch" type="search" placeholder="이름이나 초성 — 안 고르면 연결 없음" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="newTaskPetSuggestions" /><input id="newTaskPetId" type="hidden" value="" /><div class="product-suggestions" id="newTaskPetSuggestions" role="listbox" hidden></div></div><div><label for="newTaskTitle">업무·예약 제목</label><input id="newTaskTitle" required maxlength="120" placeholder="업무·예약 제목 (예: 홍길동(보리) 접종)"/></div><div><label for="newTaskDueDate">업무일</label><input id="newTaskDueDate" type="date"/></div><div><label for="newTaskTime">예약 시간 (선택)</label><input id="newTaskTime" type="time" title="예약 시간(선택)"/></div><div><label for="newTaskAssignee">담당자</label><select id="newTaskAssignee" required><option value="">담당자 선택</option></select></div><div><label for="newTaskPriority">중요도</label><select id="newTaskPriority"><option value="normal">보통</option><option value="high">높음</option><option value="low">낮음</option></select></div><button class="login-button" type="submit">업무 등록</button></form></section>
         </section>
       </main>
     </div>
@@ -378,6 +501,8 @@
       <p class="form-message" id="newPetFormMessage"></p>
     </dialog>
     <script src="config.js"></script>
-    <script src="app.js?v=20261114m"></script>
+    <script src="qr-code.js?v=20261123f"></script>
+    <script src="messaging-core.js?v=20261123f"></script>
+    <script src="app.js?v=20261123f"></script>
   </body>
 </html>
