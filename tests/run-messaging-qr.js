@@ -334,6 +334,40 @@ async function cleanupTestData(page) {
       assert.strictEqual(await page.inputValue('#msgDueDate'), Core.addYears(localDate(0), 1));
     });
 
+    await step('말하기 버튼은 접종 안내처럼 직접 쓰기가 아닌 종류에서도 보이고 문구 칸에 받아 적는다', async () => {
+      await page.click('#msgTypeChoices >> text=접종 안내');
+      await page.waitForSelector('#msgSpeak', { state: 'visible' });
+      await page.click('#msgSpeak');
+      await page.evaluate(() => window.__rec.onresult({ resultIndex: 0, results: [Object.assign([{ transcript: '말로 덧붙인 문장' }], { isFinal: true })] }));
+      assert.ok((await page.inputValue('#msgText')).includes('말로 덧붙인 문장'));
+      await page.click('#msgSpeak');
+      assert.ok((await page.textContent('#msgSpeak')).includes('말하기'));
+      await page.click('#msgTypeChoices >> text=직접 쓰기');
+    });
+
+    await step('🎤 말로 찾기: 이름을 말하면 검색칸에 들어가 추천 목록이 뜨고, 다시 누르면 멈춘다', async () => {
+      await page.evaluate(() => { const el = document.querySelector('#msgPetSearch'); el.value = ''; el.dispatchEvent(new Event('input', { bubbles: true })); el.blur(); });
+      await page.waitForSelector('#msgPetSpeak', { state: 'visible' });
+      await page.click('#msgPetSpeak');
+      assert.ok((await page.textContent('#msgPetSpeak')).includes('듣는 중'));
+      const spoken = baseName(petLabel);
+      await page.evaluate((name) => window.__rec.onresult({ resultIndex: 0, results: [Object.assign([{ transcript: `${name}.` }], { isFinal: true })] }), spoken);
+      assert.strictEqual(await page.inputValue('#msgPetSearch'), spoken); // 끝의 마침표는 빠진다
+      await page.waitForSelector('#msgPetSuggestions .product-suggestion', { state: 'visible', timeout: 10000 });
+      assert.ok((await page.locator('#msgPetSuggestions .product-suggestion').allTextContents()).some((text) => text.includes(spoken)));
+      await page.evaluate(() => window.__rec.onend && window.__rec.onend());
+      assert.ok((await page.textContent('#msgPetSpeak')).includes('말로 찾기'));
+      await page.locator('#msgPetSuggestions .product-suggestion', { hasText: petLabel }).first().click(); // 뒤 단계가 같은 반려동물로 이어지게 다시 고른다
+      await page.waitForFunction((label) => document.querySelector('#msgPetSearch').value === label, petLabel);
+    });
+
+    await step('말하기 오류(마이크 없음)는 쉬운 말로 알려 준다', async () => {
+      await page.click('#msgPetSpeak');
+      await page.evaluate(() => window.__rec.onerror({ error: 'not-allowed' }));
+      assert.ok((await page.textContent('#msgPetSpeakHint')).includes('마이크'));
+      await page.click('#msgPetSpeak'); // 멈춤
+    });
+
     await step('음성 인식이 없는 브라우저에서는 말하기 버튼이 보이지 않는다', async () => {
       const context2 = await browser.newContext();
       await context2.addInitScript(NO_SPEECH);
@@ -343,6 +377,7 @@ async function cleanupTestData(page) {
       await page3.click('#messagingNav');
       await page3.click('#msgTypeChoices >> text=직접 쓰기');
       assert.strictEqual(await page3.locator('#msgSpeak').isVisible(), false);
+      assert.strictEqual(await page3.locator('#msgPetSpeak').isVisible(), false);
       await context2.close();
     });
 

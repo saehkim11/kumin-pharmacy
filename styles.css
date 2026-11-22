@@ -285,7 +285,6 @@ html[data-theme="dark"] .legacy-sales-toolbar select,html[data-theme="dark"] .le
 
 /* 오늘 일정(대시보드 맨 위): 예약·업무를 시간순 큰 글씨 목록으로, 장년층도 한눈에 읽히게 */
 .today-schedule{margin-bottom:20px}
-.today-schedule #todayScheduleList{display:grid;gap:8px;margin-top:14px}
 .today-schedule-row{display:grid;grid-template-columns:84px 1fr auto;align-items:center;gap:14px;width:100%;padding:14px 16px;border:1px solid var(--line);border-radius:10px;background:var(--white);font:inherit;text-align:left;cursor:pointer;transition:border-color .15s,background .15s}
 .today-schedule-row:hover{border-color:var(--blue);background:var(--blue-soft)}
 .today-schedule-time{font-size:17px;font-weight:800;color:var(--blue);font-variant-numeric:tabular-nums}
@@ -525,3 +524,42 @@ html[data-theme="dark"] .msg-rule-row .msg-rule-save,html[data-theme="dark"] .ms
 .sale-consent-check{display:flex;align-items:flex-start;gap:8px;font-size:15px;font-weight:700;line-height:1.4}
 .sale-consent-check input{flex:none;width:22px;height:22px;margin-top:1px}
 @media(max-width:560px){.sale-due-actions .msg-choice{flex:1 1 calc(50% - 8px)}}
+
+/* 대시보드 1주 달력 줄 + 알림 후보(알림 4단계) */
+.week-strip{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;margin-top:14px}
+.week-day{display:flex;flex-direction:column;gap:6px;min-width:0;padding:10px;border:1px solid var(--line);border-radius:12px;background:var(--white)}
+.week-day.is-today{border-color:var(--blue);background:var(--blue-soft)}
+.week-day-head{font-size:14px;font-weight:800;overflow-wrap:anywhere}
+.week-day-none{margin:0;color:var(--muted);font-size:13px}
+.week-item{display:grid;gap:2px;min-width:0;padding:8px;border:1px solid var(--line);border-radius:10px;background:var(--white);color:var(--ink);font:inherit;text-align:left;cursor:pointer}
+.week-item:hover{border-color:var(--blue)}
+.week-item-time{font-size:12px;font-weight:800;color:var(--blue)}
+.week-item-title{font-size:14px;line-height:1.35;overflow-wrap:anywhere}
+.week-item.cand{border-style:dashed;border-color:#e8590c;background:#fff4ec}
+.week-item.cand .week-item-time{color:#c2410c}
+html[data-theme="dark"] .week-item.cand{background:#2a1a10;border-color:#f08a4b}
+html[data-theme="dark"] .week-item.cand .week-item-time{color:#f5a672}
+.msg-cand-item{display:grid;gap:8px;min-width:0;margin:0 0 10px;padding:14px;border:1px dashed #e8590c;border-radius:12px;background:var(--white)}
+.msg-cand-item strong{font-size:17px;overflow-wrap:anywhere}
+.msg-cand-item .msg-hint{margin:0}
+@media(max-width:1000px){.week-strip{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(max-width:560px){.week-strip{grid-template-columns:minmax(0,1fr)}.msg-cand-item .msg-choice{flex:1 1 calc(50% - 8px)}}
+.keep-login{display:flex;align-items:center;gap:10px;margin:12px 0 4px;font-size:15px;font-weight:600;cursor:pointer}.keep-login input{width:22px;height:22px;flex:none;margin:0;padding:0}
+/* ---- 메시지 화면 정리: 번호 있는 3단계, 같은 크기의 버튼, 읽기 쉬운 글자 ---- */
+#messaging .eyebrow{font-size:13px;letter-spacing:.04em}
+#messaging .panel>.empty-message{font-size:15px;line-height:1.6;color:var(--muted)}
+.msg-group-title{display:flex;align-items:center;gap:10px;margin:26px 0 12px;padding-top:20px;border-top:1px solid var(--line);font-size:19px;font-weight:800;color:var(--navy)}
+.msg-form>.msg-group-title:first-child{margin-top:0;padding-top:0;border-top:0}
+.msg-group-title span{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:var(--blue);color:#fff;font-size:15px}
+html[data-theme="dark"] .msg-group-title{color:var(--ink)}html[data-theme="dark"] .msg-group-title span{color:#0d1b32}
+#messaging .msg-step>label,#messaging .msg-label{display:block;margin:0 0 8px;font-size:16px;font-weight:700;color:var(--ink)}
+#messaging .msg-hint,#messaging .msg-sent-note{font-size:15px;line-height:1.55}
+#messaging .msg-choice{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:10px 18px;font-size:16px;text-align:center}
+#messaging .msg-choices{gap:10px;margin-top:10px}
+.msg-inline{display:flex;gap:10px;align-items:stretch}.msg-inline input{flex:1 1 auto;min-width:0}.msg-inline .msg-choice{flex:none;margin:0}
+.msg-mic{border-color:var(--blue);color:var(--blue)}.msg-mic[aria-pressed="true"]{color:#fff}
+#msgDateStep{display:flex;flex-wrap:wrap;align-items:center;gap:10px}#msgDateStep>label{flex:0 0 100%}#msgDateStep>input{flex:0 0 auto;width:210px}#msgDateStep>.msg-quick{margin:0;flex:1 1 auto}#msgDateStep>p{flex:0 0 100%;margin:0}
+.msg-tools-tokens:has(> [hidden]:only-child){display:none}.msg-tools-actions:not(:has(> :not([hidden]))){display:none}
+.msg-tools-actions{padding-top:10px;border-top:1px dashed var(--line)}
+#messaging .msg-panel .msg-qr-box h3{font-size:18px}
+@media(max-width:560px){.msg-inline{flex-direction:column}.msg-inline .msg-choice{width:100%}#msgDateStep>input{width:100%}.msg-group-title{font-size:18px}}

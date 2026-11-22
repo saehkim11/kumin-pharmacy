@@ -44,14 +44,9 @@
 
         <section class="view active" id="dashboard" aria-labelledby="pageTitle">
           <section class="panel today-schedule" id="todaySchedulePanel">
-            <div class="panel-heading"><div><p class="eyebrow">SCHEDULE</p><h2 id="todayScheduleTitle">오늘 일정</h2></div><button type="button" class="login-button" id="dashboardNewAppointment" hidden>+ 새 예약</button></div>
-            <div class="legacy-sales-view-tabs today-schedule-tabs" id="todayScheduleTabs">
-              <button type="button" class="active" data-range="today">오늘</button>
-              <button type="button" data-range="tomorrow">내일</button>
-              <button type="button" data-range="week">이번주</button>
-            </div>
-            <div id="todayScheduleList"></div>
-            <p class="empty-message" id="todayScheduleEmpty" hidden>등록된 예약·업무가 없습니다.</p>
+            <div class="panel-heading"><div><p class="eyebrow">SCHEDULE</p><h2 id="todayScheduleTitle">이번 한 주 일정</h2></div><button type="button" class="login-button" id="dashboardNewAppointment" hidden>+ 새 예약</button></div>
+            <div class="week-strip" id="weekStrip" aria-live="polite"></div>
+            <p class="empty-message" id="todayScheduleEmpty" hidden>이번 한 주에 등록된 예약·업무가 없습니다.</p>
           </section>
           <section class="panel dashboard-news" id="dashboardNews" aria-labelledby="dashboardNewsTitle" hidden>
             <div class="dashboard-news-heading"><div><p class="eyebrow">PET POLICY &amp; INDUSTRY</p><h2 id="dashboardNewsTitle">반려동물·동물의료 알림</h2><p>보호자에게 안내할 수 있는 정부·지자체 정책과 동물의료·동물약품 발표입니다.</p></div><span class="dashboard-news-source">공식·전문 매체</span></div>
@@ -297,14 +292,27 @@
         </section>
 
         <section class="view" id="messaging">
+          <section class="panel msg-candidates" id="msgCandidates" hidden>
+            <p class="eyebrow">알림 후보 · 관리자 전용</p><h2>알림 보낼 때예요</h2>
+            <p class="empty-message">판매 화면에서 정해 둔 다음 알림일이 가까워진 건이에요. [알림 보내기]를 누르면 문구가 채워져요. 보내지 않을 건은 [넘김]을 누르세요.</p>
+            <p class="msg-warning" id="msgCandidatesFailedNote" role="status" hidden>알림 후보를 불러오지 못했어요. 지금 보이는 목록은 이전에 불러온 것이에요.</p>
+            <div id="msgCandidatesList"></div>
+            <p class="empty-message" id="msgCandidatesEmpty" hidden>지금 알림 보낼 건이 없어요.</p>
+            <p class="msg-hint" id="msgCandidatesNote" aria-live="polite"></p>
+          </section>
           <section class="panel msg-panel">
             <p class="eyebrow">접종 안내 문자 · 관리자 전용</p><h2>메시지 발송</h2>
             <p class="empty-message">문구를 만들고 폰 카메라로 QR을 비추면, 폰의 문자 앱에 받는 사람과 내용이 채워져요. 폰에서 전송만 누르면 됩니다.</p>
             <div class="msg-grid">
               <div class="msg-form">
+                <h3 class="msg-group-title"><span aria-hidden="true">1</span>누구에게 보낼까요?</h3>
                 <div class="msg-step sale-pet-field">
                   <label for="msgPetSearch">반려동물</label>
-                  <input id="msgPetSearch" type="search" placeholder="이름이나 초성을 입력하세요 (예: ㅂㄹ)" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="msgPetSuggestions" />
+                  <div class="msg-inline">
+                    <input id="msgPetSearch" type="search" placeholder="이름이나 초성을 입력하세요 (예: ㅂㄹ)" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="msgPetSuggestions" />
+                    <button class="msg-choice msg-mic" id="msgPetSpeak" type="button" aria-pressed="false" hidden>🎤 말로 찾기</button>
+                  </div>
+                  <p class="msg-warning" id="msgPetSpeakHint" role="status" hidden></p>
                   <div class="product-suggestions" id="msgPetSuggestions" role="listbox" hidden></div>
                   <p class="msg-hint" id="msgLastVaccine" hidden></p>
                 </div>
@@ -329,6 +337,7 @@
                   <label for="msgPhone">받는 번호</label>
                   <input id="msgPhone" type="tel" inputmode="numeric" placeholder="반려동물을 고르면 자동으로 채워져요" autocomplete="off" />
                 </div>
+                <h3 class="msg-group-title"><span aria-hidden="true">2</span>무슨 안내를 보낼까요?</h3>
                 <div class="msg-step">
                   <span class="msg-label" id="msgTypeLabel">어떤 안내인가요?</span>
                   <div class="msg-choices" id="msgTypeChoices" role="group" aria-labelledby="msgTypeLabel"></div>
@@ -348,12 +357,13 @@
                   <label for="msgTime">시간</label>
                   <input id="msgTime" type="time" value="10:00" />
                 </div>
+                <h3 class="msg-group-title"><span aria-hidden="true">3</span>문구를 확인해요</h3>
                 <div class="msg-step">
                   <label for="msgText">문구 (고칠 수 있어요)</label>
                   <textarea id="msgText" rows="5" placeholder="위에서 반려동물과 날짜를 고르면 문구가 만들어져요."></textarea>
-                  <div class="msg-choices msg-tools">
-                    <span id="msgTokenButtons" class="msg-token-group" hidden></span>
-                    <button class="msg-choice" id="msgSpeak" type="button" hidden>🎤 말하기</button>
+                  <div class="msg-choices msg-tools msg-tools-tokens"><span id="msgTokenButtons" class="msg-token-group" hidden></span></div>
+                  <div class="msg-choices msg-tools msg-tools-actions">
+                    <button class="msg-choice msg-mic" id="msgSpeak" type="button" hidden>🎤 말하기</button>
                     <button class="msg-choice" id="msgSavePhrase" type="button" hidden>자주 쓰는 문구로 저장</button>
                   </div>
                   <p class="msg-hint" id="msgSpeakHint" hidden>보호자 이름·번호는 말하지 말고 위 버튼으로 넣어 주세요.</p>
@@ -472,6 +482,7 @@
         <div class="dialog-heading"><div><p class="eyebrow">SIGN IN</p><h2>로그인</h2></div><button class="close-button" type="button" id="closeLogin" aria-label="로그인 창 닫기">×</button></div>
         <label for="email">이메일</label><input id="email" type="email" autocomplete="email" required />
         <label for="password">비밀번호</label><input id="password" type="password" autocomplete="current-password" required />
+        <label class="keep-login" for="keepLogin"><input id="keepLogin" type="checkbox" checked /> 로그인 유지</label>
         <p class="form-message" id="loginMessage"></p><button class="submit-button" type="submit">로그인</button>
       </form>
     </dialog>
@@ -501,8 +512,8 @@
       <p class="form-message" id="newPetFormMessage"></p>
     </dialog>
     <script src="config.js"></script>
-    <script src="qr-code.js?v=20261123f"></script>
-    <script src="messaging-core.js?v=20261123f"></script>
-    <script src="app.js?v=20261123f"></script>
+    <script src="qr-code.js?v=20261123k"></script>
+    <script src="messaging-core.js?v=20261123k"></script>
+    <script src="app.js?v=20261123k"></script>
   </body>
 </html>

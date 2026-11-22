@@ -204,6 +204,76 @@
     return sums;
   }
 
+  // ---- 알림 후보 계산(4단계) ----
+  const REBUY_WINDOW_DAYS = 183; // 마지막 구매가 이 기간 안이거나 보호자가 동의했을 때만 재구매 안내를 제안한다(약 6개월)
+  const VACCINE_GRACE_DAYS = 7; // 접종 안내는 예정일이 지나도 이 기간까지만 "지났어요"로 남긴다
+
+  function daysBetween(fromIso, toIso) {
+    const from = parseIso(fromIso);
+    const to = parseIso(toIso);
+    return Math.round((Date.UTC(to.year, to.month - 1, to.day) - Date.UTC(from.year, from.month - 1, from.day)) / 86400000);
+  }
+
+  // 저장된 다음 알림일(pet_next_due)에서 "알림 보낼 때예요" 후보를 만든다. 화면과 무관한 순수 계산이다.
+  //  dueRows: [{ pet_id, product_id, due_on, sold_on }], rules: [{ product_id, kind, lead_days }],
+  //  pets: [{ id, name, owner_id }], prefs: [{ owner_id, status }], logs: [{ pet_id, kind, ref_key, due_on, status }],
+  //  validPurchases: Set("반려동물:상품:구매일") — 취소되지 않은 판매만 들어 있다, productNames: Map(상품 번호 -> 이름)
+  function buildCandidates({ today, dueRows, rules, pets, prefs, logs, validPurchases, productNames }) {
+    const ruleOf = new Map(rules.map((rule) => [rule.product_id, rule]));
+    const petOf = new Map(pets.map((pet) => [pet.id, pet]));
+    const prefOf = new Map(prefs.map((pref) => [pref.owner_id, pref.status]));
+    const handled = new Set(logs.filter((log) => log.status === 'sent' || log.status === 'skip').map((log) => `${log.pet_id}:${log.ref_key}:${log.due_on}`)); // 종류는 보지 않는다: 규칙 종류를 나중에 바꿔도 같은 건을 다시 제안하지 않는다
+    const manualVaccine = new Set(logs.filter((log) => (log.status === 'sent' || log.status === 'skip') && log.kind === 'manual' && log.ref_key === 'vaccine').map((log) => `${log.pet_id}:${log.due_on}`));
+    const result = [];
+    dueRows.forEach((row) => {
+      const rule = ruleOf.get(row.product_id);
+      const pet = petOf.get(row.pet_id);
+      if (!rule || !pet) return;
+      if (!validPurchases.has(`${row.pet_id}:${row.product_id}:${row.sold_on}`)) return; // 취소된 판매
+      const status = prefOf.get(pet.owner_id);
+      if (status === 'optout') return;
+      const refKey = `p${row.product_id}`;
+      if (handled.has(`${row.pet_id}:${refKey}:${row.due_on}`)) return;
+      if (rule.kind === 'vaccine' && manualVaccine.has(`${row.pet_id}:${row.due_on}`)) return; // 메시지 화면에서 직접 보낸 같은 날짜 접종 안내
+      const lateDays = daysBetween(row.due_on, today);
+      if (rule.kind === 'rebuy') {
+        if (lateDays > 0) return; // 기한이 지난 재구매는 제안하지 않는다(다른 곳에서 샀거나 방문 의사가 없을 수 있다)
+        if (daysBetween(row.sold_on, today) > REBUY_WINDOW_DAYS && status !== 'consented') return;
+      } else if (lateDays > VACCINE_GRACE_DAYS) return;
+      const overdue = lateDays > 0;
+      const startOn = addDays(row.due_on, -(rule.lead_days ?? DEFAULT_LEAD_DAYS));
+      result.push({
+        key: `${row.pet_id}:${row.product_id}`, petId: row.pet_id, petName: pet.name, ownerId: pet.owner_id,
+        productId: row.product_id, productName: productNames.get(row.product_id) || '상품', kind: rule.kind, refKey,
+        dueOn: row.due_on, startOn, showOn: overdue ? today : row.due_on, overdue, ready: today >= startOn
+      });
+    });
+    return result.sort((a, b) => a.showOn.localeCompare(b.showOn) || a.petName.localeCompare(b.petName, 'ko'));
+  }
+
+  // 오늘부터 N일을 날짜별 칸으로 나눈다(범위 밖 후보는 뺀다). 키는 날짜(YYYY-MM-DD)이고 후보가 없는 날도 빈 배열로 넣는다.
+  function candidatesByDay(candidates, todayIso, dayCount) {
+    const byDay = new Map();
+    for (let i = 0; i < dayCount; i += 1) byDay.set(addDays(todayIso, i), []);
+    candidates.forEach((candidate) => { if (byDay.has(candidate.showOn)) byDay.get(candidate.showOn).push(candidate); });
+    return byDay;
+  }
+
+  // 재구매 안내 문구: 광고로 볼 소지가 있어 맨 앞에 (광고)를 붙이고 수신거부 방법을 넣는다. QR에 안 들어갈 만큼 길면 상품 이름을 줄인다.
+  function rebuyText({ petName, productName, clinicName = CLINIC.name, clinicPhone = CLINIC.phone }) {
+    const make = (pet, product) => `(광고) ${clinicName ? `[${clinicName}] ` : ''}${pet}${product ? ` ${product}` : ''} 다시 필요할 때예요.${clinicPhone ? ` 문의: ${clinicPhone}` : ''} 수신거부: 병원에 말씀해 주세요`;
+    const fits = (text) => checkQr('01000000000', text).ok;
+    let pet = String(petName || '').trim();
+    let name = String(productName || '').trim();
+    let text = make(pet, name);
+    while (!fits(text) && name.length > 0) {
+      name = name.length > 4 ? `${name.slice(0, Math.max(2, name.length - 4))}…` : '';
+      text = make(pet, name);
+    }
+    while (!fits(text) && pet.length > 2) { pet = pet.slice(0, -1); text = make(pet, name); } // 아주 긴 이름은 마지막 수단으로 줄인다
+    return text;
+  }
+
   // ---- 공유 업무 → 메시지 화면 ----
   // 반려동물이 연결된 업무를 "예약 확인" 문구로 채울 값으로 바꾼다. 반려동물이 없으면 null.
   function reservationFromTask(task) {
@@ -342,7 +412,7 @@
   }
 
   return {
-    UNIT_DAY_PRESETS, FIXED_PRESETS, MAX_NEXT_DUE_DAYS, calcNextDue, nextDueText, sumQuantity, RULE_KINDS, DEFAULT_LEAD_DAYS, parseRuleInput, describeRule, reservationFromTask, plainPetLabel, HISTORY_RANGES, HISTORY_STATUSES, toKstDate, toKstTime, historyStartDate, filterHistory, groupHistoryByDate, groupHistoryByOwner, summarizeHistory, findSameSend, kindLabel, statusLabel, prefLabel,
+    REBUY_WINDOW_DAYS, VACCINE_GRACE_DAYS, daysBetween, buildCandidates, candidatesByDay, rebuyText, UNIT_DAY_PRESETS, FIXED_PRESETS, MAX_NEXT_DUE_DAYS, calcNextDue, nextDueText, sumQuantity, RULE_KINDS, DEFAULT_LEAD_DAYS, parseRuleInput, describeRule, reservationFromTask, plainPetLabel, HISTORY_RANGES, HISTORY_STATUSES, toKstDate, toKstTime, historyStartDate, filterHistory, groupHistoryByDate, groupHistoryByOwner, summarizeHistory, findSameSend, kindLabel, statusLabel, prefLabel,
     CLINIC, MESSAGE_TYPES, VACCINE_CHOICES, DUE_QUICK_CHOICES, TOKEN_LABELS,
     normalizeMobile, addDays, addYears, formatDueDate, isPast, formatTime,
     buildMessageText, insertToken, fillTokens, tokenize, findUnfilledTokens, toQrText, checkQr
